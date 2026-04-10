@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 import os
+import shutil
 import uuid
 
 import aiofiles
@@ -23,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/videos", tags=["视频管理"])
 
+# 保持对后台任务的强引用，防止被 GC
+_background_tasks: set = set()
+
 
 @router.get("")
 async def list_videos(
@@ -34,7 +39,7 @@ async def list_videos(
     _=Depends(get_current_user),
 ):
     query = select(SourceVideo)
-    if camera_id:
+    if camera_id is not None:
         query = query.where(SourceVideo.camera_id == camera_id)
     if analysis_status is not None:
         query = query.where(SourceVideo.analysis_status == analysis_status)
@@ -44,6 +49,121 @@ async def list_videos(
     result = await db.execute(query)
     items = [VideoOut.model_validate(r) for r in result.scalars().all()]
     return ok(data=PageResult(items=items, total=total, page=page, size=size))
+
+
+# ── 分片上传 ──────────────────────────────────────────────
+
+class UploadInitRequest(BaseModel):
+    camera_id: int
+    filename: str
+    file_size: int
+    total_chunks: int
+
+
+@router.post("/upload/init")
+async def upload_init(
+    body: UploadInitRequest,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    upload_id = str(uuid.uuid4())
+    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    meta_path = os.path.join(tmp_dir, "_meta")
+    async with aiofiles.open(meta_path, "w") as f:
+        await f.write(json.dumps({
+            "camera_id": body.camera_id,
+            "filename": body.filename,
+            "file_size": body.file_size,
+            "total_chunks": body.total_chunks,
+        }))
+
+    video = SourceVideo(
+        camera_id=body.camera_id,
+        source_type=2,
+        file_size=body.file_size,
+        analysis_status=0,
+        upload_status=1,
+    )
+    db.add(video)
+    await db.commit()
+    await db.refresh(video)
+
+    async with aiofiles.open(meta_path, "w") as f:
+        await f.write(json.dumps({
+            "camera_id": body.camera_id,
+            "filename": body.filename,
+            "file_size": body.file_size,
+            "total_chunks": body.total_chunks,
+            "video_id": video.id,
+        }))
+
+    return ok(data={"upload_id": upload_id, "video_id": video.id})
+
+
+@router.post("/upload/chunk")
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: in...),
+    file: UploadFile = File(...),
+    _=Depends(get_current_user),
+):
+    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
+    if not os.path.isdir(tmp_dir):
+        return fail("upload_id 不存在", 400)
+
+    chunk_path = os.path.join(tmp_dir, f"chunk_{chunk_index:06d}")
+    async with aiofiles.open(chunk_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            await f.write(chunk)
+
+    return ok(message="分片上传成功")
+
+
+@router.post("/upload/complete")
+async def upload_complete(
+    upload_id: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
+    meta_path = os.path.join(tmp_dir, "_meta")
+    if not os.path.isfile(meta_path):
+        return fail("upload_id 不存在", 400)
+
+    async with aiofiles.open(meta_path, "r") as f:
+        meta = json.loads(await f.read())
+
+    total_chunks = meta["total_chunks"]
+    video_id = meta["video_id"]
+    filename = meta["filename"]
+
+    for i in range(total_chunks):
+        if not os.path.isfile(os.path.join(tmp_dir, f"chunk_{i:06d}")):
+            return fail(f"分片 {i} 缺失", 400)
+
+    dest_dir = settings.LOCAL_VIDEO_PATH
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, f"{upload_id}_{filename}")
+
+    async with aiofiles.open(dest_path, "wb") as out:
+        for i in range(total_chunks):
+            chunk_path = os.path.join(tmp_dir, f"chunk_{i:06d}")
+            async with aiofiles.open(chunk_path, "rb") as chunk_f:
+                while data := await chunk_f.read(1024 * 1024):
+                    await out.write(data)
+
+    result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
+    video = result.scalar_one_or_none()
+    if video:
+        video.local_path = dest_path
+        video.upload_status = 2
+        await db.commit()
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return ok(data={"video_id": video_id, "local_path": dest_path})
 
 
 @router.get("/{video_id}")
@@ -67,7 +187,7 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depe
 
 
 @router.delete("/{video_id}")
-async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depet_current_user)):
     result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
     video = result.scalar_one_or_none()
     if not video:
@@ -96,7 +216,7 @@ async def _run_analysis(video_id: int, local_path: str, camera_id: int, room_id:
                 video = result.scalar_one_or_none()
                 if video:
                     video.analysis_status = 3
-                    await db.commit()
+          await db.commit()
         except Exception:
             logger.error(f"更新分析状态失败: video_id={video_id}")
 
@@ -113,12 +233,10 @@ async def trigger_analyze(video_id: int, db: AsyncSession = Depends(get_db), _=D
     if not video.local_path:
         return fail("视频本地路径为空，无法分析")
 
-    # 查询摄像头关联的库房ID
     cam_result = await db.execute(select(Camera).where(Camera.id == video.camera_id))
     camera = cam_result.scalar_one_or_none()
     room_id = camera.room_id if camera else 0
 
-    # 查询启用的规则列表
     rules_result = await db.execute(select(Rule).where(Rule.enabled == 1))
     rules = [
         {"code": r.code, "name": r.name, "description": r.description,
@@ -129,131 +247,8 @@ async def trigger_analyze(video_id: int, db: AsyncSession = Depends(get_db), _=D
     video.analysis_status = 1
     await db.commit()
 
-    # 启动后台异步分析任务
-    asyncio.create_task(_run_analysis(video_id, video.local_path, video.camera_id, room_id, rules))
+    task = asyncio.create_task(_run_analysis(video_id, video.local_path, video.camera_id, room_id, rules))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return ok(message="已提交分析任务")
-
-
-# ── 分片上传 ──────────────────────────────────────────────
-
-class UploadInitRequest(BaseModel):
-    camera_id: int
-    filename: str
-    file_size: int
-    total_chunks: int
-
-
-@router.post("/upload/init")
-async def upload_init(
-    body: UploadInitRequest,
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    upload_id = str(uuid.uuid4())
-    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    # 写入元信息供 complete 阶段使用
-    meta_path = os.path.join(tmp_dir, "_meta")
-    async with aiofiles.open(meta_path, "w") as f:
-        import json
-        await f.write(json.dumps({
-            "camera_id": body.camera_id,
-            "filename": body.filename,
-            "file_size": body.file_size,
-            "total_chunks": body.total_chunks,
-        }))
-
-    video = SourceVideo(
-        camera_id=body.camera_id,
-        source_type=2,
-        file_size=body.file_size,
-        analysis_status=0,
-        upload_status=1,
-    )
-    db.add(video)
-    await db.commit()
-    await db.refresh(video)
-
-    # 把 video_id 也写入 meta
-    async with aiofiles.open(meta_path, "w") as f:
-        await f.write(json.dumps({
-            "camera_id": body.camera_id,
-            "filename": body.filename,
-            "file_size": body.file_size,
-            "total_chunks": body.total_chunks,
-            "video_id": video.id,
-        }))
-
-    return ok(data={"upload_id": upload_id, "video_id": video.id})
-
-
-@router.post("/upload/chunk")
-async def upload_chunk(
-    upload_id: str = Form(...),
-    chunk_index: int = Form(...),
-    file: UploadFile = File(...),
-    _=Depends(get_current_user),
-):
-    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
-    if not os.path.isdir(tmp_dir):
-        return fail("upload_id 不存在", 400)
-
-    chunk_path = os.path.join(tmp_dir, f"chunk_{chunk_index:06d}")
-    async with aiofiles.open(chunk_path, "wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            await f.write(chunk)
-
-    return ok(message="分片上传成功")
-
-
-@router.post("/upload/complete")
-async def upload_complete(
-    upload_id: str = Form(...),
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    import json
-
-    tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
-    meta_path = os.path.join(tmp_dir, "_meta")
-    if not os.path.isfile(meta_path):
-        return fail("upload_id 不存在", 400)
-
-    async with aiofiles.open(meta_path, "r") as f:
-        meta = json.loads(await f.read())
-
-    total_chunks = meta["total_chunks"]
-    video_id = meta["video_id"]
-    filename = meta["filename"]
-
-    # 验证所有分片存在
-    for i in range(total_chunks):
-        if not os.path.isfile(os.path.join(tmp_dir, f"chunk_{i:06d}")):
-            return fail(f"分片 {i} 缺失", 400)
-
-    dest_dir = settings.LOCAL_VIDEO_PATH
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.join(dest_dir, f"{upload_id}_{filename}")
-
-    async with aiofiles.open(dest_path, "wb") as out:
-        for i in range(total_chunks):
-            chunk_path = os.path.join(tmp_dir, f"chunk_{i:06d}")
-            async with aiofiles.open(chunk_path, "rb") as chunk_f:
-                while data := await chunk_f.read(1024 * 1024):
-                    await out.write(data)
-
-    # 更新视频记录
-    result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
-    video = result.scalar_one_or_none()
-    if video:
-        video.local_path = dest_path
-        video.upload_status = 2
-        await db.commit()
-
-    # 清理临时目录
-    import shutil
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    return ok(data={"video_id": video_id, "local_path": dest_path})

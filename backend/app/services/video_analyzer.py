@@ -2,8 +2,9 @@
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import cv2
 
@@ -17,6 +18,9 @@ from app.services.storage_service import storage_service
 
 logger = logging.getLogger(__name__)
 
+# 保存后台任务引用，防止被 GC 回收
+_background_tasks: set = set()
+
 
 class VideoAnalyzer:
     """视频分析全流程调度"""
@@ -28,18 +32,18 @@ class VideoAnalyzer:
         try:
             # Step1: YOLO 跳帧粗扫
             logger.info(f"[Step1] YOLO 跳帧粗扫...")
-            coarse_intervals = yolo_detector.detect_persons_coarse(local_path)
+            coarse_intervals = await asyncio.to_thread(yolo_detector.detect_persons_coarse, local_path)
             if not coarse_intervals:
                 logger.info(f"[Step1] 未检测到人物，跳过分析")
                 return {"events": [], "status": "no_person"}
 
             # Step2: 扩帧精扫
             logger.info(f"[Step2] 扩帧精扫, 粗扫区间数={len(coarse_intervals)}")
-            fine_intervals = yolo_detector.detect_persons_fine(local_path, coarse_intervals)
+            fine_intervals = await asyncio.to_thread(yolo_detector.detect_persons_fine, local_path, coarse_intervals)
 
             # Step3: 短窗口合并
             logger.info(f"[Step3] 短窗口合并...")
-            merged_intervals = yolo_detector.merge_intervals(fine_intervals)
+            merged_intervals = await asyncio.to_thread(yolo_detector.merge_intervals, fine_intervals)
             logger.info(f"[Step3] 合并后人物片段数={len(merged_intervals)}")
 
             all_events = []
@@ -55,34 +59,26 @@ class VideoAnalyzer:
                 for sub_idx, (sub_start, sub_end) in enumerate(sub_segments):
                     # 抽帧
                     frame_dir = os.path.join(settings.LOCAL_FRAME_PATH, str(video_id), f"seg{seg_idx}_sub{sub_idx}")
-                    frame_paths = self._extract_frames(local_path, sub_start, sub_end, frame_dir)
+                    frame_paths = await asyncio.to_thread(self._extract_frames, local_path, sub_start, sub_end, frame_dir)
 
                     if not frame_paths:
                         continue
 
-                    # YOLO 检测每帧人数
-                    person_counts = []
-                    yolo_boxes = []
-                    for fp in frame_paths[::5]:  # 每5帧检测一次节省时间
-                        frame = cv2.imread(fp)
-                        if frame is not None:
-                            det = yolo_detector.detect_frame(frame)
-                            person_counts.append(det["person_count"])
-                            yolo_boxes.extend(det["boxes"])
-
-                    person_count = yolo_detector.get_person_count_biased(person_counts)
+                    # YOLO 检测每帧人数（整个循环在线程中执行）
+                    person_counts, yolo_boxes = await asyncio.to_thread(self._detect_frames_sync, frame_paths)
+                    person_count = await asyncio.to_thread(yolo_detector.get_person_count_biased, person_counts)
                     yolo_results = {"person_count": person_count, "boxes": yolo_boxes[:10]}
 
                     # 姿态分析（取中间帧）
                     pose_results = {"postures": [], "running_detected": False}
                     mid_frame_path = frame_paths[len(frame_paths) // 2]
-                    mid_frame = cv2.imread(mid_frame_path)
+                    mid_frame = await asyncio.to_thread(cv2.imread, mid_frame_path)
                     if mid_frame is not None:
-                        postures = pose_tracker.analyze_posture(mid_frame)
+                        postures = await asyncio.to_thread(pose_tracker.analyze_posture, mid_frame)
                         pose_results["postures"] = postures
 
                     # 奔跑检测
-                    running = pose_tracker.detect_running(local_path, sub_start, sub_end)
+                    running = await asyncio.to_thread(pose_tracker.detect_running, local_path, sub_start, sub_end)
                     pose_results["running_detected"] = running
 
                     # Step5: Qwen3.5 多模态分析
@@ -92,9 +88,14 @@ class VideoAnalyzer:
                     # Step6: 增量合并结论
                     merged_conclusion = await llm_analyzer.merge_conclusions(conclusion, merged_conclusion)
 
-                # Step7: 裁判模型 + 规则匹配
+                # Step7: 裁判判定
                 logger.info(f"  [Step7] 裁判判定...")
                 judge_result = await llm_analyzer.judge(merged_conclusion, rules)
+
+                # 本地规则匹配，合并到 rule_hits
+                local_hits = await asyncio.to_thread(rule_engine.match_rules, merged_conclusion, rules)
+                existing_hits = judge_result.get("rule_hits", [])
+                judge_result["rule_hits"] = existing_hits + [h for h in local_hits if h not in existing_hits]
 
                 # 构造事件
                 event = {
@@ -116,8 +117,10 @@ class VideoAnalyzer:
                     from app.services.rag_service import rag_service
                     embedding = await rag_service._embed(merged_conclusion)
                     event_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    milvus_service.insert(
-                        event_id=video_id * 1000 + seg_idx,
+                    event_id = uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF  # 正 int64
+                    await asyncio.to_thread(
+                        milvus_service.insert,
+                        event_id=event_id,
                         room_id=room_id,
                         camera_id=camera_id,
                         event_time=event_time,
@@ -128,8 +131,10 @@ class VideoAnalyzer:
                 except Exception as e:
                     logger.error(f"  [Step8] Milvus 写入失败: {e}")
 
-            # 异步推送视频到线上存储
-            asyncio.create_task(storage_service.async_push_video(video_id, local_path))
+            # 异步推送视频到线上存储，保存 task 引用防止 GC
+            task = asyncio.create_task(storage_service.async_push_video(video_id, local_path))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             logger.info(f"[视频分析] 完成: video_id={video_id}, 事件数={len(all_events)}")
             return {"events": all_events, "status": "completed"}
@@ -137,6 +142,19 @@ class VideoAnalyzer:
         except Exception as e:
             logger.error(f"[视频分析] 失败: video_id={video_id}, error={e}")
             return {"events": [], "status": "error", "error": str(e)}
+
+    @staticmethod
+    def _detect_frames_sync(frame_paths: List[str]):
+        """同步检测帧列表中的人物（供 asyncio.to_thread 调用）"""
+        person_counts = []
+        yolo_boxes = []
+        for fp in frame_paths[::5]:  # 每5帧检测一次节省时间
+            frame = cv2.imread(fp)
+            if frame is not None:
+                det = yolo_detector.detect_frame(frame)
+                person_counts.append(det["person_count"])
+                yolo_boxes.extend(det["boxes"])
+        return person_counts, yolo_boxes
 
     def _split_segment(self, start: float, end: float, duration: int = None) -> List[tuple]:
         """将人物大片段按 60s 切分"""

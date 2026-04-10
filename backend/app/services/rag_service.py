@@ -1,4 +1,5 @@
 """RAG 检索服务"""
+import asyncio
 import logging
 from typing import AsyncGenerator, Dict, Optional, List
 
@@ -27,7 +28,7 @@ class RAGService:
             query_embedding = await self._embed(message)
 
             # 2. Milvus Top-K 召回
-            hits = milvus_service.search(query_embedding, top_k=20)
+            hits = await asyncio.to_thread(milvus_service.search, query_embedding, 20)
             if not hits:
                 return {
                     "answer": "未找到相关事件记录。请确认查询条件或等待更多视频分析完成。",
@@ -86,7 +87,7 @@ class RAGService:
         """流式 RAG 流程，逐 token yield SSE data"""
         try:
             query_embedding = await self._embed(message)
-            hits = milvus_service.search(query_embedding, top_k=20)
+            hits = await asyncio.to_thread(milvus_service.search, query_embedding, 20)
             if not hits:
                 yield "data: 未找到相关事件记录。请确认查询条件或等待更多视频分析完成。\n\n"
                 yield "data: [DONE]\n\n"
@@ -146,12 +147,13 @@ class RAGService:
             return [0.0] * 1024
 
     async def _rerank(self, query_embedding: List[float], documents: List[str]) -> List[int]:
-        """重排序：用 embedding 相似度重排"""
+        """重排序：用 embedding 相似度重排（并行化）"""
         try:
             query_vec = np.array(query_embedding)
+            # 并行 embed 所有文档
+            embeddings = await asyncio.gather(*[self._embed(doc) for doc in documents])
             scores = []
-            for doc in documents:
-                emb = await self._embed(doc)
+            for emb in embeddings:
                 doc_vec = np.array(emb)
                 sim = np.dot(query_vec, doc_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec) + 1e-8)
                 scores.append(float(sim))
