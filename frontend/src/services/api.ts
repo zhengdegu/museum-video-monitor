@@ -33,6 +33,8 @@ export const getEvents = (params?: any) => request.get('/events', { params })
 export const getEvent = (id: number) => request.get(`/events/${id}`)
 export const getEventAggregates = (params?: any) => request.get('/events/aggregates', { params })
 export const getEventRuleHits = (id: number) => request.get(`/events/${id}/rule-hits`)
+export const getEventTrend = (days = 7) => request.get('/events/stats/trend', { params: { days } })
+export const getRoomRisk = () => request.get('/events/stats/room-risk')
 
 // Rules
 export const getRules = (params?: any) => request.get('/rules', { params })

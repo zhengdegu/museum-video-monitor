@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Table, Tag, Button, Space, message, Popconfirm, Select } from 'antd'
+import { Table, Tag, Button, Space, message, Popconfirm, Select, Modal } from 'antd'
+import { PlayCircleOutlined } from '@ant-design/icons'
 import { getVideos, deleteVideo, triggerAnalyze } from '../../services/api'
+import VideoPlayer from '../../components/VideoPlayer'
 
 const statusMap: Record<number, { color: string; text: string }> = {
   0: { color: 'default', text: '待分析' },
@@ -15,6 +17,7 @@ export default function VideoList() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<number | undefined>()
+  const [playVideo, setPlayVideo] = useState<{ src: string } | null>(null)
 
   const fetchData = async (p = page) => {
     setLoading(true)
@@ -43,6 +46,7 @@ export default function VideoList() {
     {
       title: '操作', render: (_: any, record: any) => (
         <Space>
+          <Button size="small" icon={<PlayCircleOutlined />} onClick={() => setPlayVideo({ src: record.remote_url || `/api/videos/${record.id}/stream` })}>播放</Button>
           {record.analysis_status === 0 && <Button size="small" type="primary" onClick={() => handleAnalyze(record.id)}>开始分析</Button>}
           <Popconfirm title="确认删除？" onConfirm={() => deleteVideo(record.id).then(() => { message.success('已删除'); fetchData() })}>
             <Button size="small" danger>删除</Button>
@@ -60,6 +64,16 @@ export default function VideoList() {
           options={Object.entries(statusMap).map(([k, v]) => ({ value: Number(k), label: v.text }))} />
       </div>
       <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ current: page, total, pageSize: 20, onChange: setPage }} />
+      <Modal
+        open={!!playVideo}
+        onCancel={() => setPlayVideo(null)}
+        footer={null}
+        width={800}
+        destroyOnClose
+        title="视频播放"
+      >
+        {playVideo && <VideoPlayer src={playVideo.src} />}
+      </Modal>
     </div>
   )
 }

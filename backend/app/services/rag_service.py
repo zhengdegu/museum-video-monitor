@@ -1,6 +1,6 @@
 """RAG 检索服务"""
 import logging
-from typing import Dict, Optional, List
+from typing import AsyncGenerator, Dict, Optional, List
 
 import numpy as np
 from openai import AsyncOpenAI
@@ -81,6 +81,57 @@ class RAGService:
                 "sources": [],
                 "session_id": session_id,
             }
+
+    async def query_stream(self, message: str, session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+        """流式 RAG 流程，逐 token yield SSE data"""
+        try:
+            query_embedding = await self._embed(message)
+            hits = milvus_service.search(query_embedding, top_k=20)
+            if not hits:
+                yield "data: 未找到相关事件记录。请确认查询条件或等待更多视频分析完成。\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            descriptions = [h["description"] for h in hits]
+            reranked_indices = await self._rerank(query_embedding, descriptions)
+            top_hits = [hits[i] for i in reranked_indices[:5]]
+
+            context = "\n\n".join([
+                f"[事件{i+1}] 库房ID:{h['room_id']} | 摄像头ID:{h['camera_id']} | 时间:{h['event_time']}\n{h['description']}"
+                for i, h in enumerate(top_hits)
+            ])
+
+            prompt = f"""你是博物馆视频安防智能助手。请根据以下检索到的事件记录回答用户问题。
+
+检索到的事件记录：
+{context}
+
+用户问题：{message}
+
+回答要求：
+1. 简洁准确，引用具体时间和库房信息
+2. 如有违规事件，重点标注
+3. 如果检索结果无法回答问题，如实说明"""
+
+            stream = await self.llm_client.chat.completions.create(
+                model=self.text_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2000,
+                temperature=0.1,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    yield f"data: {delta}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.error(f"RAG 流式查询失败: {e}")
+            yield f"data: 查询出错: {str(e)}\n\n"
+            yield "data: [DONE]\n\n"
 
     async def _embed(self, text: str) -> List[float]:
         """文本向量化 (bge-large-zh-v1.5)"""

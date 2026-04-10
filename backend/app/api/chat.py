@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -7,6 +8,19 @@ from app.utils.deps import get_current_user
 from app.services.rag_service import rag_service
 
 router = APIRouter(prefix="/chat", tags=["NLP智能交互"])
+
+
+@router.get("/stream")
+async def chat_stream(
+    message: str = Query(...),
+    session_id: str = Query(None),
+    _=Depends(get_current_user),
+):
+    """SSE 流式自然语言查询"""
+    return StreamingResponse(
+        rag_service.query_stream(message, session_id=session_id),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("")
