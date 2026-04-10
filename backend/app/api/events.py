@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date
@@ -25,9 +25,9 @@ async def list_events(
     _=Depends(get_current_user),
 ):
     query = select(Event)
-    if room_id:
+    if room_id is not None:
         query = query.where(Event.room_id == room_id)
-    if camera_id:
+    if camera_id is not None:
         query = query.where(Event.camera_id == camera_id)
     if event_type:
         query = query.where(Event.event_type == event_type)
@@ -49,7 +49,7 @@ async def list_aggregates(
     _=Depends(get_current_user),
 ):
     query = select(EventAggregate)
-    if room_id:
+    if room_id is not None:
         query = query.where(EventAggregate.room_id == room_id)
     if risk_level is not None:
         query = query.where(EventAggregate.risk_level == risk_level)
@@ -67,7 +67,7 @@ async def event_trend(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    since = datetime.utcnow().date() - timedelta(days=days - 1)
+    since = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
     query = (
         select(cast(Event.event_time, Date).label("day"), func.count().label("count"))
         .where(Event.event_time >= since)

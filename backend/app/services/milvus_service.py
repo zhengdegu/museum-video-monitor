@@ -18,6 +18,7 @@ class MilvusService:
     def __init__(self):
         self._connected = False
         self._collection: Optional[Collection] = None
+        self._loaded = False
 
     def connect(self):
         if not self._connected:
@@ -56,6 +57,8 @@ class MilvusService:
 
     def insert(self, event_id: int, room_id: int, camera_id: int, event_time: str, description: str, embedding: List[float]):
         coll = self._get_collection()
+        if len(description) > 4096:
+            description = description[:4096]
         data = [[event_id], [room_id], [camera_id], [event_time], [description], [embedding]]
         coll.insert(data)
         coll.flush()
@@ -63,7 +66,9 @@ class MilvusService:
 
     def search(self, query_embedding: List[float], top_k: int = 10, filters: Optional[Dict] = None) -> List[Dict]:
         coll = self._get_collection()
-        coll.load()
+        if not self._loaded:
+            coll.load()
+            self._loaded = True
 
         search_params = {"metric_type": "COSINE", "params": {"nprobe": 16}}
         expr = None

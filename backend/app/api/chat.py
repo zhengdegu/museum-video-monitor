@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.common import ok
 from app.utils.deps import get_current_user
@@ -24,7 +22,7 @@ async def chat_stream(
 
 
 @router.post("")
-async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def chat(body: ChatRequest, _=Depends(get_current_user)):
     """自然语言查询事件"""
     result = await rag_service.query(body.message, session_id=body.session_id)
     return ok(data=ChatResponse(
