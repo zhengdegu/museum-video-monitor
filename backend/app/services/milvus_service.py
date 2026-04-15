@@ -1,9 +1,9 @@
-"""Milvus 向量存储服务"""
+"""Milvus 向量存储服务 — 支持 Milvus Lite（URI模式）和 Milvus Server（host:port模式）"""
 import logging
 import time
 from typing import List, Dict, Optional
 
-from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
+from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility, MilvusClient
 
 from app.config import settings
 
@@ -20,6 +20,7 @@ class MilvusService:
         self._connected = False
         self._collection: Optional[Collection] = None
         self._loaded = False
+        self._use_lite = bool(settings.MILVUS_URI)
 
     def connect(self):
         if self._connected:
@@ -27,9 +28,15 @@ class MilvusService:
         max_retries = 10
         for attempt in range(1, max_retries + 1):
             try:
-                connections.connect(host=settings.MILVUS_HOST, port=settings.MILVUS_PORT)
+                if self._use_lite:
+                    # Milvus Lite 模式：通过 URI 连接（本地文件或远程）
+                    connections.connect(alias="default", uri=settings.MILVUS_URI)
+                    logger.info(f"Milvus Lite 已连接: {settings.MILVUS_URI}")
+                else:
+                    # Milvus Server 模式：通过 host:port 连接
+                    connections.connect(alias="default", host=settings.MILVUS_HOST, port=settings.MILVUS_PORT)
+                    logger.info(f"Milvus Server 已连接: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
                 self._connected = True
-                logger.info(f"Milvus 已连接: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
                 return
             except Exception as e:
                 logger.warning(f"Milvus 连接失败 (第{attempt}/{max_retries}次): {e}")

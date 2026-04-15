@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Milvus
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
+    MILVUS_URI: str = ""  # Milvus Lite 模式，设置后优先使用（如 ./data/milvus_lite.db）
     MILVUS_COLLECTION: str = "museum_events"
 
     # LLM API（兼容 OpenAI 协议，支持本地 vLLM / 通义千问 / DeepSeek / OpenAI 等）

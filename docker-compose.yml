@@ -1,11 +1,9 @@
-version: "3.8"
-
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.0
     container_name: museum-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root123}
       MYSQL_DATABASE: museum_monitor
     ports:
       - "3306:3306"
@@ -19,38 +17,12 @@ services:
       timeout: 5s
       retries: 10
 
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.5
-    container_name: museum-etcd
-    environment:
-      ETCD_AUTO_COMPACTION_MODE: revision
-      ETCD_AUTO_COMPACTION_RETENTION: "1000"
-      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
-    volumes:
-      - etcd_data:/etcd
-
-  milvus:
-    image: milvusdb/milvus:v2.4.4
-    container_name: museum-milvus
-    depends_on:
-      - etcd
-      - minio
-    environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    ports:
-      - "19530:19530"
-    command: ["milvus", "run", "standalone"]
-    volumes:
-      - milvus_data:/var/lib/milvus
-
   minio:
     image: minio/minio:latest
     container_name: museum-minio
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -64,24 +36,30 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      milvus:
-        condition: service_started
       minio:
         condition: service_started
     environment:
+      SECRET_KEY: ${SECRET_KEY:-museum-monitor-secret-2026}
       MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
+      MYSQL_PORT: "3306"
       MYSQL_USER: root
-      MYSQL_PASSWORD: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root123}
       MYSQL_DATABASE: museum_monitor
-      MILVUS_HOST: milvus
-      MILVUS_PORT: 19530
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      SECRET_KEY: change-me-in-production
-      VLLM_TEXT_URL: http://vllm-text:8000/v1
-      VLLM_VISION_URL: http://vllm-vision:8000/v1
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      # Milvus Lite 内嵌模式
+      MILVUS_URI: /app/data/milvus_lite.db
+      # 大模型 API（从 .env 读取）
+      VLLM_TEXT_URL: ${VLLM_TEXT_URL:-https://api.openai.com/v1}
+      VLLM_VISION_URL: ${VLLM_VISION_URL:-https://api.openai.com/v1}
+      VLLM_TEXT_MODEL: ${VLLM_TEXT_MODEL:-gpt-4o}
+      VLLM_VISION_MODEL: ${VLLM_VISION_MODEL:-gpt-4o}
+      VLLM_API_KEY: ${VLLM_API_KEY:-not-needed}
+      VLLM_VISION_API_KEY: ${VLLM_VISION_API_KEY:-}
+      # 报警
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_TYPE: ${ALERT_WEBHOOK_TYPE:-feishu}
     ports:
       - "8080:8080"
     volumes:
@@ -95,42 +73,7 @@ services:
     ports:
       - "80:80"
 
-  # GPU 服务 — 需要 NVIDIA Container Toolkit
-  vllm-text:
-    image: vllm/vllm-openai:latest
-    container_name: museum-vllm-text
-    environment:
-      NVIDIA_VISIBLE_DEVICES: "0"
-    command: --model Qwen/Qwen3-32B --port 8000 --gpu-memory-utilization 0.9
-    ports:
-      - "8000:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  vllm-vision:
-    image: vllm/vllm-openai:latest
-    container_name: museum-vllm-vision
-    environment:
-      NVIDIA_VISIBLE_DEVICES: "1"
-    command: --model Qwen/Qwen3.5-35B-A3B --port 8000 --gpu-memory-utilization 0.9
-    ports:
-      - "8001:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
 volumes:
   mysql_data:
-  etcd_data:
-  milvus_data:
   minio_data:
   video_data:

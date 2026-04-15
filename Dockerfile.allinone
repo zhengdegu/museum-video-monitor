@@ -62,7 +62,7 @@ COPY deploy/nginx-allinone.conf /etc/nginx/sites-available/default
 COPY init.sql /docker-entrypoint-initdb.d/init.sql
 
 # ---- Data directories ----
-RUN mkdir -p /var/lib/mysql /data/minio /data/etcd /var/lib/milvus /var/log/supervisor
+RUN mkdir -p /var/lib/mysql /data/minio /var/log/supervisor /app/data /app/backend/data
 
 # ---- Supervisor config ----
 COPY deploy/supervisord.conf /etc/supervisor/conf.d/museum.conf
