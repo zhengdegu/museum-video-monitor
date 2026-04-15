@@ -21,11 +21,13 @@ ENV TZ=Asia/Shanghai
 
 # ---- System packages ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl wget gnupg2 lsb-release ca-certificates \
+    curl wget gnupg2 lsb-release ca-certificates software-properties-common \
     supervisor nginx \
-    python3.11 python3.11-venv python3.11-dev python3-pip \
     ffmpeg libgl1 libglib2.0-0 \
     libaio1 libncurses5 libnuma1 libmecab2 \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- MySQL 8.4 ----
