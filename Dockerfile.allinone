@@ -46,8 +46,7 @@ RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/
 # ---- Python backend ----
 WORKDIR /app/backend
 COPY backend/requirements.txt .
-RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt && \
-    python3.11 -m pip install --no-cache-dir --break-system-packages "pymilvus[lite]"
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY backend/ .
 RUN mkdir -p /app/data/videos /app/data/frames /app/models
