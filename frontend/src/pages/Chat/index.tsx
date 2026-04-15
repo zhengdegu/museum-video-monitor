@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Input, Button, List, Card, Spin, Drawer, Tag } from 'antd'
 import { SendOutlined, PlayCircleOutlined } from '@ant-design/icons'
-import { sendChat } from '../../services/api'
 import VideoPlayer from '../../components/VideoPlayer'
 
 interface Source {
@@ -35,18 +34,69 @@ export default function ChatPage() {
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: userMsg }])
     setLoading(true)
-    try {
-      const res: any = await sendChat({ message: userMsg, session_id: sessionId })
-      if (res.code === 200) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: res.data.answer, sources: res.data.sources }])
-        if (res.data.session_id) setSessionId(res.data.session_id)
-      } else {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `错误: ${res.message}` }])
+
+    const token = localStorage.getItem('token')
+    const params = new URLSearchParams({ message: userMsg })
+    if (sessionId) params.set('session_id', sessionId)
+    const url = `/api/v1/chat/stream?${params.toString()}`
+
+    let retries = 0
+    const maxRetries = 3
+    const retryInterval = 3000
+    let fullContent = ''
+
+    const connect = () => {
+      const es = new EventSource(token ? `${url}&token=${token}` : url)
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.done) {
+            es.close()
+            if (data.session_id) setSessionId(data.session_id)
+            if (data.sources) {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1]
+                if (last?.role === 'assistant') {
+                  return [...prev.slice(0, -1), { ...last, sources: data.sources }]
+                }
+                return prev
+              })
+            }
+            setLoading(false)
+            return
+          }
+          if (data.text) {
+            fullContent += data.text
+            const content = fullContent
+            setMessages((prev) => {
+              const last = prev[prev.length - 1]
+              if (last?.role === 'assistant') {
+                return [...prev.slice(0, -1), { ...last, content }]
+              }
+              return [...prev, { role: 'assistant', content }]
+            })
+          }
+        } catch {
+          // non-JSON event, ignore
+        }
       }
-    } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '网络错误，请重试' }])
+
+      es.onerror = () => {
+        es.close()
+        if (retries < maxRetries) {
+          retries++
+          setTimeout(connect, retryInterval)
+        } else {
+          if (!fullContent) {
+            setMessages((prev) => [...prev, { role: 'assistant', content: '连接中断，请重试' }])
+          }
+          setLoading(false)
+        }
+      }
     }
-    setLoading(false)
+
+    connect()
   }
 
   return (

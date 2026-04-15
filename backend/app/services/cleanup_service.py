@@ -59,6 +59,11 @@ class CleanupService:
             videos = result.scalars().all()
 
         for video in videos:
+            # 删除前重新检查分析状态，避免删除正在分析的视频
+            async with async_session() as db:
+                fresh = await db.get(SourceVideo, video.id)
+                if not fresh or fresh.analysis_status == 1:
+                    continue
             path = video.local_path
             if path and os.path.exists(path):
                 try:

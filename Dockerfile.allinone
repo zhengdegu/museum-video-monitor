@@ -78,7 +78,8 @@ COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # ---- Environment defaults ----
-ENV MYSQL_HOST=127.0.0.1 \
+ENV SECRET_KEY=change-me-in-production \
+    MYSQL_HOST=127.0.0.1 \
     MYSQL_PORT=3306 \
     MYSQL_USER=root \
     MYSQL_PASSWORD=root \

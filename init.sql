@@ -222,6 +222,7 @@ CREATE INDEX idx_person_segment_video ON museum_person_segment(source_video_id);
 -- 分析任务索引
 CREATE INDEX idx_task_status ON analysis_task(status);
 CREATE INDEX idx_task_video_id ON analysis_task(video_id);
+CREATE INDEX idx_task_video_status ON analysis_task(video_id, status);
 
 -- 角色
 CREATE TABLE IF NOT EXISTS sys_role (

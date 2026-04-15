@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User, Role
 from app.schemas.auth import LoginRequest, TokenOut, UserCreate, UserUpdate, UserOut, RoleOut
-from app.schemas.common import ok
+from app.schemas.common import ok, fail
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.utils.deps import get_current_user
 
@@ -23,6 +23,9 @@ def _check_rate_limit(ip: str):
     attempts = _login_attempts[ip]
     # 清理过期记录
     _login_attempts[ip] = [t for t in attempts if now - t < _RATE_WINDOW]
+    if not _login_attempts[ip]:
+        del _login_attempts[ip]
+        return
     if len(_login_attempts[ip]) >= _RATE_LIMIT:
         raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
     _login_attempts[ip].append(now)

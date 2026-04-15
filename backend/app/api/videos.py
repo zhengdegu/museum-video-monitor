@@ -13,21 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models.video import SourceVideo
-from app.models.camera import Camera
-from app.models.rule import Rule
 from app.models.segment import PersonSegment, VideoSegment
 from app.schemas.event import VideoOut
 from app.schemas.common import ok, fail, PageResult
 from app.utils.deps import get_current_user
 from app.services.video_analyzer import video_analyzer
+from app.services.task_service import task_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/videos", tags=["视频管理"])
-
-# 保持对后台任务的强引用，防止被 GC
-_background_tasks: set = set()
 
 
 @router.get("")
@@ -208,31 +204,6 @@ async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depe
     return ok(message="删除成功")
 
 
-async def _run_analysis(video_id: int, local_path: str, camera_id: int, room_id: int, rules: list):
-    """后台异步执行视频分析，完成后更新状态"""
-    from app.database import async_session
-    try:
-        await video_analyzer.analyze(video_id, local_path, camera_id, room_id, rules)
-        async with async_session() as db:
-            result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
-            video = result.scalar_one_or_none()
-            if video:
-                video.analysis_status = 2
-                await db.commit()
-        logger.info(f"视频分析完成: video_id={video_id}")
-    except Exception as e:
-        logger.error(f"视频分析异常: video_id={video_id}, error={e}")
-        try:
-            async with async_session() as db:
-                result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
-                video = result.scalar_one_or_none()
-                if video:
-                    video.analysis_status = 3
-                    await db.commit()
-        except Exception:
-            logger.error(f"更新分析状态失败: video_id={video_id}")
-
-
 @router.post("/{video_id}/analyze")
 async def trigger_analyze(video_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     """手动触发视频分析"""
@@ -245,23 +216,11 @@ async def trigger_analyze(video_id: int, db: AsyncSession = Depends(get_db), _=D
     if not video.local_path:
         return fail("视频本地路径为空，无法分析")
 
-    cam_result = await db.execute(select(Camera).where(Camera.id == video.camera_id))
-    camera = cam_result.scalar_one_or_none()
-    room_id = camera.room_id if camera else 0
-
-    rules_result = await db.execute(select(Rule).where(Rule.enabled == 1))
-    rules = [
-        {"code": r.code, "name": r.name, "description": r.description,
-         "rule_type": r.rule_type, "rule_config": r.rule_config, "enabled": r.enabled}
-        for r in rules_result.scalars().all()
-    ]
-
     video.analysis_status = 1
     await db.commit()
 
-    task = asyncio.create_task(_run_analysis(video_id, video.local_path, video.camera_id, room_id, rules))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    task_id = await task_service.create_task(video_id, video.camera_id)
+    asyncio.create_task(task_service._execute_task(task_id, video_id, video.camera_id))
 
     return ok(message="已提交分析任务")
 

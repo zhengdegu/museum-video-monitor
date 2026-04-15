@@ -55,7 +55,16 @@ class VideoAnalyzer:
                 await self._step_create_aggregate(video_id, camera_id, room_id, all_events)
 
             # 异步推送视频到线上存储
-            asyncio.ensure_future(storage_service.async_push_video(video_id, local_path))
+            try:
+                push_task = asyncio.create_task(storage_service.async_push_video(video_id, local_path))
+
+                def _on_push_done(t: asyncio.Task):
+                    if t.exception():
+                        logger.error(f"[视频推送] 异步推送失败: video_id={video_id}, error={t.exception()}")
+
+                push_task.add_done_callback(_on_push_done)
+            except Exception as e:
+                logger.error(f"[视频推送] 创建推送任务失败: video_id={video_id}, error={e}")
 
             logger.info(f"[视频分析] 完成: video_id={video_id}, 事件数={len(all_events)}")
             if task_id:

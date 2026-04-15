@@ -52,17 +52,21 @@ class VideoPuller:
 
     async def _pull_loop(self, camera_id: int, rtsp_url: str, segment_duration: int, save_dir: str):
         """持续拉流循环，每个切片完成后触发分析"""
+        consecutive_failures = 0
         while True:
             try:
                 filepath = await self._pull_one_segment(camera_id, rtsp_url, segment_duration, save_dir)
                 if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                     await self._trigger_analysis(camera_id, filepath, segment_duration)
+                    consecutive_failures = 0
             except asyncio.CancelledError:
                 logger.info(f"拉流任务取消: camera_id={camera_id}")
                 return
             except Exception as e:
-                logger.error(f"拉流异常 camera_id={camera_id}: {e}")
-                await asyncio.sleep(5)
+                consecutive_failures += 1
+                backoff = min(5 * (2 ** (consecutive_failures - 1)), 60)
+                logger.error(f"拉流异常 camera_id={camera_id}, 连续失败{consecutive_failures}次, {backoff}s后重试: {e}")
+                await asyncio.sleep(backoff)
 
     async def _pull_one_segment(self, camera_id: int, rtsp_url: str, segment_duration: int, save_dir: str) -> Optional[str]:
         """使用 ffmpeg 拉取一个时间窗口的 RTSP 流"""
