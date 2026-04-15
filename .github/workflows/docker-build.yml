@@ -36,6 +36,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run pytest
+        env:
+          SECRET_KEY: ci-test-secret
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+          MINIO_ACCESS_KEY: test
+          MINIO_SECRET_KEY: test
+          VLLM_API_KEY: not-needed
         run: python -m pytest tests/ -v --tb=short
 
   build-backend:
