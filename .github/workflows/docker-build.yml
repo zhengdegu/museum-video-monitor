@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "marshmallow<4.0" "environs<12.0"
+          pip install "marshmallow<4.0" "environs<12.0" "bcrypt==4.0.1"
           pip install -r requirements.txt
 
       - name: Run pytest
