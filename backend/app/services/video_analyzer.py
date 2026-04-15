@@ -13,7 +13,7 @@ from app.services.yolo_detector import yolo_detector
 from app.services.pose_tracker import pose_tracker
 from app.services.llm_analyzer import llm_analyzer
 from app.services.rule_engine import rule_engine
-from app.services.milvus_service import milvus_service
+from app.services.vector_service import vector_service
 from app.services.storage_service import storage_service
 from app.services.alert_service import alert_service
 
@@ -159,7 +159,7 @@ class VideoAnalyzer:
         # 写入 event + rule_hit 记录
         await self._step_persist_event(event, video_id, person_segment_id, camera_id, room_id, person_count, merged_conclusion, judge_result)
 
-        # Step8: 向量化写入 Milvus
+        # Step8: 向量化写入 ChromaDB
         await self._step_vectorize(room_id, camera_id, merged_conclusion)
 
         return event
@@ -337,14 +337,14 @@ class VideoAnalyzer:
     # ── Step 8: 向量化 ────────────────────────────────────
 
     async def _step_vectorize(self, room_id: int, camera_id: int, merged_conclusion: str):
-        """向量化写入 Milvus"""
+        """向量化写入 ChromaDB"""
         try:
             from app.services.rag_service import rag_service
             embedding = await rag_service._embed(merged_conclusion)
             event_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             event_id = uuid.uuid4().int & 0x7FFFFFFFFFFFFFFF
             await asyncio.to_thread(
-                milvus_service.insert,
+                vector_service.insert,
                 event_id=event_id,
                 room_id=room_id,
                 camera_id=camera_id,
@@ -352,9 +352,9 @@ class VideoAnalyzer:
                 description=merged_conclusion[:4000],
                 embedding=embedding,
             )
-            logger.info("  [Step8] 已写入 Milvus")
+            logger.info("  [Step8] 已写入 ChromaDB")
         except Exception as e:
-            logger.error(f"  [Step8] Milvus 写入失败: {e}")
+            logger.error(f"  [Step8] ChromaDB 写入失败: {e}")
 
     # ── 工具方法 ───────────────────────────────────────────
 

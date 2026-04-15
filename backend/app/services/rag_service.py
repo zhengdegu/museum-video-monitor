@@ -7,13 +7,13 @@ import numpy as np
 from openai import AsyncOpenAI
 
 from app.config import settings
-from app.services.milvus_service import milvus_service
+from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
 
 class RAGService:
-    """基于 Milvus + bge + Qwen3 的 RAG 检索链路"""
+    """基于 ChromaDB + bge + Qwen3 的 RAG 检索链路"""
 
     def __init__(self):
         embed_url = settings.EMBEDDING_URL or settings.VLLM_TEXT_URL
@@ -29,8 +29,8 @@ class RAGService:
             # 1. 向量化 query
             query_embedding = await self._embed(message)
 
-            # 2. Milvus Top-K 召回
-            hits = await asyncio.to_thread(milvus_service.search, query_embedding, 20)
+            # 2. ChromaDB Top-K 召回
+            hits = await asyncio.to_thread(vector_service.search, query_embedding, 20)
             if not hits:
                 return {
                     "answer": "未找到相关事件记录。请确认查询条件或等待更多视频分析完成。",
@@ -80,7 +80,7 @@ class RAGService:
         except Exception as e:
             logger.error(f"RAG 查询失败: {e}")
             return {
-                "answer": f"查询出错: {str(e)}。请确保 Milvus 和 vLLM 服务已启动。",
+                "answer": f"查询出错: {str(e)}。请确保 ChromaDB 和 vLLM 服务已启动。",
                 "sources": [],
                 "session_id": session_id,
             }
@@ -89,7 +89,7 @@ class RAGService:
         """流式 RAG 流程，逐 token yield SSE data"""
         try:
             query_embedding = await self._embed(message)
-            hits = await asyncio.to_thread(milvus_service.search, query_embedding, 20)
+            hits = await asyncio.to_thread(vector_service.search, query_embedding, 20)
             if not hits:
                 yield "data: 未找到相关事件记录。请确认查询条件或等待更多视频分析完成。\n\n"
                 yield "data: [DONE]\n\n"

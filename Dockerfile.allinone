@@ -40,16 +40,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio && \
     chmod +x /usr/local/bin/minio
 
-# ---- Milvus Lite（纯Python内嵌，无需独立安装） ----
-# 通过 pip 安装 pymilvus[lite]，在 requirements.txt 或下方安装
-
 # ---- Python backend ----
 WORKDIR /app/backend
 COPY backend/requirements.txt .
 RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
-# 尝试安装 milvus-lite（内嵌Milvus），失败则跳过（可用外部 Milvus Server 替代）
-RUN python3.11 -m pip install --no-cache-dir --break-system-packages "milvus-lite" || \
-    echo "WARN: milvus-lite install failed, will need external Milvus server"
 
 COPY backend/ .
 RUN mkdir -p /app/data/videos /app/data/frames /app/models
@@ -64,7 +58,7 @@ COPY deploy/nginx-allinone.conf /etc/nginx/sites-available/default
 COPY init.sql /docker-entrypoint-initdb.d/init.sql
 
 # ---- Data directories ----
-RUN mkdir -p /var/lib/mysql /data/minio /var/log/supervisor /app/data /app/backend/data
+RUN mkdir -p /var/lib/mysql /data/minio /var/log/supervisor /app/data /app/data/chromadb /app/backend/data
 
 # ---- Supervisor config ----
 COPY deploy/supervisord.conf /etc/supervisor/conf.d/museum.conf
@@ -80,7 +74,7 @@ ENV SECRET_KEY=change-me-in-production \
     MYSQL_USER=root \
     MYSQL_PASSWORD=root \
     MYSQL_DATABASE=museum_monitor \
-    MILVUS_URI=./data/milvus_lite.db \
+    CHROMA_PERSIST_DIR=/app/data/chromadb \
     MINIO_ENDPOINT=127.0.0.1:9000 \
     MINIO_ACCESS_KEY=minioadmin \
     MINIO_SECRET_KEY=minioadmin \
