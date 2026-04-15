@@ -31,12 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv python3.11-dev python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- MySQL 8.4 ----
-RUN wget -q https://repo.mysql.com/apt/ubuntu/pool/mysql-8.4-lts/mysql-community-server-core_8.4.4-1ubuntu22.04_amd64.deb 2>/dev/null || true
-RUN curl -fsSL https://repo.mysql.com//RPM-GPG-KEY-mysql-2023 | gpg --dearmor -o /usr/share/keyrings/mysql.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/mysql.gpg] http://repo.mysql.com/apt/ubuntu jammy mysql-8.4-lts" > /etc/apt/sources.list.d/mysql.list && \
-    apt-get update && apt-get install -y --no-install-recommends mysql-server && \
-    rm -rf /var/lib/apt/lists/*
+# ---- MySQL 8.0 (Ubuntu 22.04 官方源自带，无需外部仓库) ----
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    mysql-server mysql-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # ---- MinIO ----
 RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio && \
