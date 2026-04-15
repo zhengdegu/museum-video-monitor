@@ -64,7 +64,7 @@ export const getInventoryChecks = (params?: any) => request.get('/inventory/chec
 export const createInventoryCheck = (data: any) => request.post('/inventory/checks', data)
 export const updateInventoryCheck = (id: number, data: any) => request.put(`/inventory/checks/${id}`, data)
 export const deleteInventoryCheck = (id: number) => request.delete(`/inventory/checks/${id}`)
-export const exportInventoryCheck = (id: number) => `/api/inventory/checks/${id}/export`
+export const exportInventoryCheck = (id: number) => `/api/v1/inventory/checks/${id}/export`
 export const getMovements = (params?: any) => request.get('/inventory/movements', { params })
 export const createMovement = (data: any) => request.post('/inventory/movements', data)
 

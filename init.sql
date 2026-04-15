@@ -175,6 +175,35 @@ CREATE TABLE IF NOT EXISTS museum_collection_movement (
     FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
 );
 
+-- ========== 索引 ==========
+
+-- 事件表高频查询索引
+CREATE INDEX idx_event_time ON museum_event(event_time);
+CREATE INDEX idx_event_camera_id ON museum_event(camera_id);
+CREATE INDEX idx_event_room_id ON museum_event(room_id);
+CREATE INDEX idx_event_type ON museum_event(event_type);
+
+-- 视频表分析状态索引
+CREATE INDEX idx_video_analysis_status ON museum_source_video(analysis_status);
+CREATE INDEX idx_video_camera_id ON museum_source_video(camera_id);
+
+-- 规则命中索引
+CREATE INDEX idx_rule_hit_event_id ON museum_rule_hit(event_id);
+CREATE INDEX idx_rule_hit_rule_id ON museum_rule_hit(rule_id);
+
+-- 摄像头按库房查询
+CREATE INDEX idx_camera_room_id ON museum_camera(room_id);
+
+-- 藏品按库房查询
+CREATE INDEX idx_collection_room_id ON museum_collection(room_id);
+
+-- 聚合事件索引
+CREATE INDEX idx_aggregate_room_id ON museum_event_aggregate(room_id);
+CREATE INDEX idx_aggregate_session_start ON museum_event_aggregate(session_start);
+
+-- 人物片段按视频查询
+CREATE INDEX idx_person_segment_video ON museum_person_segment(source_video_id);
+
 -- 角色
 CREATE TABLE IF NOT EXISTS sys_role (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,

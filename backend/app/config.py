@@ -1,19 +1,22 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import List
 
 
 class Settings(BaseSettings):
     # App
     APP_NAME: str = "博物馆视频智能监控分析平台"
     DEBUG: bool = False
-    SECRET_KEY: str = "museum-video-monitor-secret-key-change-in-production"
+    SECRET_KEY: str  # 必须通过环境变量设置，无默认值
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+
+    # CORS
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:80,http://localhost"
 
     # MySQL
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: int = 3306
-    MYSQL_USER: str = "root"
-    MYSQL_PASSWORD: str = "root"
+    MYSQL_USER: str  # 必须通过环境变量设置
+    MYSQL_PASSWORD: str  # 必须通过环境变量设置
     MYSQL_DATABASE: str = "museum_monitor"
 
     # Milvus
@@ -33,8 +36,8 @@ class Settings(BaseSettings):
 
     # MinIO
     MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_ACCESS_KEY: str  # 必须通过环境变量设置
+    MINIO_SECRET_KEY: str  # 必须通过环境变量设置
     MINIO_BUCKET: str = "museum-videos"
 
     # Storage
@@ -57,6 +60,10 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     class Config:
         env_file = ".env"

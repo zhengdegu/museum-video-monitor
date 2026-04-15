@@ -146,17 +146,29 @@ class RAGService:
             logger.error(f"Embedding 失败: {e}")
             return [0.0] * 1024
 
+    async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """批量文本向量化（单次 API 调用）"""
+        try:
+            response = await self.embed_client.embeddings.create(
+                model=self.embed_model,
+                input=texts,
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logger.error(f"批量 Embedding 失败: {e}")
+            return [[0.0] * 1024 for _ in texts]
+
     async def _rerank(self, query_embedding: List[float], documents: List[str]) -> List[int]:
-        """重排序：用 embedding 相似度重排（并行化）"""
+        """重排序：批量 embed 后计算相似度排序"""
         try:
             query_vec = np.array(query_embedding)
-            # 并行 embed 所有文档
-            embeddings = await asyncio.gather(*[self._embed(doc) for doc in documents])
-            scores = []
-            for emb in embeddings:
-                doc_vec = np.array(emb)
-                sim = np.dot(query_vec, doc_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec) + 1e-8)
-                scores.append(float(sim))
+            # 批量 embed 所有文档（单次 API 调用替代逐个调用）
+            doc_embeddings = await self._embed_batch(documents)
+            doc_matrix = np.array(doc_embeddings)
+            # 向量化计算余弦相似度
+            norms = np.linalg.norm(doc_matrix, axis=1)
+            query_norm = np.linalg.norm(query_vec)
+            scores = np.dot(doc_matrix, query_vec) / (norms * query_norm + 1e-8)
 
             ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
             return ranked

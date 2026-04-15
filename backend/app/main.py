@@ -20,24 +20,25 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:80", "http://localhost"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(auth.router, prefix="/api")
-app.include_router(rooms.router, prefix="/api")
-app.include_router(cameras.router, prefix="/api")
-app.include_router(videos.router, prefix="/api")
-app.include_router(events.router, prefix="/api")
-app.include_router(rules.router, prefix="/api")
-app.include_router(collections.router, prefix="/api")
-app.include_router(chat.router, prefix="/api")
-app.include_router(inventory.router, prefix="/api")
+# 注册路由（/api/v1/ 前缀）
+API_PREFIX = "/api/v1"
+app.include_router(auth.router, prefix=API_PREFIX)
+app.include_router(rooms.router, prefix=API_PREFIX)
+app.include_router(cameras.router, prefix=API_PREFIX)
+app.include_router(videos.router, prefix=API_PREFIX)
+app.include_router(events.router, prefix=API_PREFIX)
+app.include_router(rules.router, prefix=API_PREFIX)
+app.include_router(collections.router, prefix=API_PREFIX)
+app.include_router(chat.router, prefix=API_PREFIX)
+app.include_router(inventory.router, prefix=API_PREFIX)
 
 
-@app.get("/api/health")
+@app.get("/api/v1/health")
 async def health():
     return {"status": "ok", "app": settings.APP_NAME}

@@ -1,4 +1,4 @@
-"""规则引擎服务"""
+"""规则引擎服务 — 结构化 JSON 匹配"""
 import logging
 from typing import List, Dict, Optional
 
@@ -6,11 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 class RuleEngine:
-    """自定义规则匹配引擎"""
+    """基于结构化 JSON config 的规则匹配引擎"""
 
     def match_rules(self, analysis_result, rules: List[Dict]) -> List[Dict]:
         """将分析结果与规则列表匹配，返回命中的规则"""
-        # analysis_result 可能是字符串（大模型结论）或字典
         if isinstance(analysis_result, str):
             analysis_result = {"text": analysis_result}
         hits = []
@@ -24,7 +23,14 @@ class RuleEngine:
 
     def _check_rule(self, result: Dict, rule: Dict) -> Optional[Dict]:
         rule_type = rule.get("rule_type", "")
-        config = rule.get("rule_config", {}) or {}
+        config = rule.get("rule_config") or {}
+        if isinstance(config, str):
+            import json
+            try:
+                config = json.loads(config)
+            except (json.JSONDecodeError, TypeError):
+                config = {}
+
         checkers = {
             "person_count": self._check_person_count,
             "dress": self._check_dress,
@@ -38,78 +44,88 @@ class RuleEngine:
         return None
 
     def _check_person_count(self, result: Dict, rule: Dict, config: Dict) -> Optional[Dict]:
-        """检查人数是否 < min_count"""
+        """检查人数是否 < min_count — 基于结构化字段"""
         min_count = config.get("min_count", 2)
         person_count = result.get("person_count", 0)
-        if person_count > 0 and person_count < min_count:
-            return {
-                "rule_code": rule["code"],
-                "rule_name": rule["name"],
-                "hit": True,
-                "confidence": 0.9,
-                "detail": f"检测到 {person_count} 人进出库房，低于最低要求 {min_count} 人",
-            }
+        if isinstance(person_count, (int, float)) and 0 < person_count < min_count:
+            return self._hit(rule, 0.9, f"检测到 {person_count} 人进出库房，低于最低要求 {min_count} 人")
         return None
 
     def _check_dress(self, result: Dict, rule: Dict, config: Dict) -> Optional[Dict]:
-        """检查着装是否不符合要求"""
-        text = result.get("text", "") + str(result.get("dress_analysis", ""))
+        """检查着装 — 优先使用结构化字段 dress_violations，回退到文本"""
         violations = []
-        if config.get("require_uniform") and ("非工作服" in text or "便装" in text or "未穿" in text):
-            violations.append("未穿统一工作服")
-        if config.get("forbid_backpack") and ("背包" in text or "书包" in text or "挎包" in text):
-            violations.append("携带背包")
+        dress_violations = result.get("dress_violations", [])
+        if isinstance(dress_violations, list) and dress_violations:
+            if config.get("require_uniform") and any(v.get("type") == "no_uniform" for v in dress_violations):
+                violations.append("未穿统一工作服")
+            if config.get("forbid_backpack") and any(v.get("type") == "backpack" for v in dress_violations):
+                violations.append("携带背包")
+        else:
+            # 回退：从文本中匹配关键词
+            text = result.get("text", "") + str(result.get("dress_analysis", ""))
+            if config.get("require_uniform") and any(kw in text for kw in ("非工作服", "便装", "未穿")):
+                violations.append("未穿统一工作服")
+            if config.get("forbid_backpack") and any(kw in text for kw in ("背包", "书包", "挎包")):
+                violations.append("携带背包")
         if violations:
-            return {
-                "rule_code": rule["code"],
-                "rule_name": rule["name"],
-                "hit": True,
-                "confidence": 0.8,
-                "detail": "着装违规: " + ", ".join(violations),
-            }
+            return self._hit(rule, 0.8, "着装违规: " + ", ".join(violations))
         return None
 
     def _check_behavior(self, result: Dict, rule: Dict, config: Dict) -> Optional[Dict]:
-        """检查是否有奔跑/跳跃/躲藏"""
-        text = result.get("text", "")
+        """检查危险行为 — 优先使用结构化布尔字段"""
         violations = []
-        if config.get("forbid_running") and ("奔跑" in text or "跑步" in text or result.get("running_detected")):
-            violations.append("检测到奔跑行为")
-        if config.get("forbid_jumping") and ("跳跃" in text or "跳" in text or result.get("jumping_detected")):
-            violations.append("检测到跳跃行为")
-        if config.get("forbid_hiding") and ("躲藏" in text or "躲避" in text or result.get("hiding_detected")):
-            violations.append("检测到躲藏行为")
+        checks = [
+            ("forbid_running", "running_detected", ("奔跑", "跑步"), "检测到奔跑行为"),
+            ("forbid_jumping", "jumping_detected", ("跳跃", "跳"), "检测到跳跃行为"),
+            ("forbid_hiding", "hiding_detected", ("躲藏", "躲避"), "检测到躲藏行为"),
+        ]
+        text = result.get("text", "")
+        for config_key, field_key, keywords, msg in checks:
+            if not config.get(config_key):
+                continue
+            # 优先结构化字段
+            if result.get(field_key):
+                violations.append(msg)
+            elif any(kw in text for kw in keywords):
+                violations.append(msg)
         if violations:
-            return {
-                "rule_code": rule["code"],
-                "rule_name": rule["name"],
-                "hit": True,
-                "confidence": 0.85,
-                "detail": "行为违规: " + ", ".join(violations),
-            }
+            return self._hit(rule, 0.85, "行为违规: " + ", ".join(violations))
         return None
 
     def _check_posture(self, result: Dict, rule: Dict, config: Dict) -> Optional[Dict]:
-        """检查手持文物姿态"""
-        text = result.get("text", "") + str(result.get("posture_analysis", ""))
+        """检查手持文物姿态 — 优先使用结构化字段"""
         violations = []
-        if config.get("require_dual_hand") and ("单手" in text or "一只手" in text):
-            violations.append("单手持有文物")
-        if config.get("require_supervisor") and result.get("person_count", 0) < 2:
-            violations.append("无人在旁监督")
+        posture_data = result.get("posture_analysis") or {}
+        text = result.get("text", "") + str(result.get("posture_analysis", ""))
+
+        if config.get("require_dual_hand"):
+            if isinstance(posture_data, dict) and posture_data.get("single_hand"):
+                violations.append("单手持有文物")
+            elif any(kw in text for kw in ("单手", "一只手")):
+                violations.append("单手持有文物")
+
+        if config.get("require_supervisor"):
+            person_count = result.get("person_count", 0)
+            if isinstance(person_count, (int, float)) and person_count < 2:
+                violations.append("无人在旁监督")
+
         if violations:
-            return {
-                "rule_code": rule["code"],
-                "rule_name": rule["name"],
-                "hit": True,
-                "confidence": 0.75,
-                "detail": "姿态违规: " + ", ".join(violations),
-            }
+            return self._hit(rule, 0.75, "姿态违规: " + ", ".join(violations))
         return None
 
     def _check_filter(self, result: Dict, rule: Dict, config: Dict) -> Optional[Dict]:
-        """仅保留有人画面（此规则不产生命中，用于过滤逻辑）"""
+        """仅保留有人画面（此规则不产生命中）"""
         return None
+
+    @staticmethod
+    def _hit(rule: Dict, confidence: float, detail: str) -> Dict:
+        return {
+            "rule_code": rule["code"],
+            "rule_name": rule["name"],
+            "hit": True,
+            "confidence": confidence,
+            "detail": detail,
+        }
 
 
 # 全局单例

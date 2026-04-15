@@ -111,6 +111,11 @@ async def upload_chunk(
     _=Depends(get_current_user),
 ):
     tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
+    # 路径遍历校验
+    real_tmp = os.path.realpath(tmp_dir)
+    real_base = os.path.realpath(os.path.join(settings.LOCAL_VIDEO_PATH, "tmp"))
+    if not real_tmp.startswith(real_base + os.sep) and real_tmp != real_base:
+        return fail("非法路径", 400)
     if not os.path.isdir(tmp_dir):
         return fail("upload_id 不存在", 400)
 
@@ -129,6 +134,11 @@ async def upload_complete(
     _=Depends(get_current_user),
 ):
     tmp_dir = os.path.join(settings.LOCAL_VIDEO_PATH, "tmp", upload_id)
+    # 路径遍历校验
+    real_tmp = os.path.realpath(tmp_dir)
+    real_base = os.path.realpath(os.path.join(settings.LOCAL_VIDEO_PATH, "tmp"))
+    if not real_tmp.startswith(real_base + os.sep) and real_tmp != real_base:
+        return fail("非法路径", 400)
     meta_path = os.path.join(tmp_dir, "_meta")
     if not os.path.isfile(meta_path):
         return fail("upload_id 不存在", 400)

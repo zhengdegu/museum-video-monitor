@@ -76,7 +76,7 @@ export default function ChatPage() {
                           color="blue"
                           style={{ cursor: 'pointer' }}
                           onClick={() => {
-                            if (s.video_id) setPlayVideo({ src: `/api/videos/${s.video_id}/stream`, time: s.start_time })
+                            if (s.video_id) setPlayVideo({ src: `/api/v1/videos/${s.video_id}/stream`, time: s.start_time })
                           }}
                         >
                           {s.description || `视频 #${s.video_id || s.event_id}`}
