@@ -3,6 +3,9 @@
 # Includes: Nginx + FastAPI + MySQL 8.4 + Milvus + MinIO + etcd
 # ============================================================
 
+# 默认 ubuntu:22.04，需要 GPU 时构建时传 --build-arg BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
+ARG BASE_IMAGE=ubuntu:22.04
+
 # ---------- Stage 1: Build frontend ----------
 FROM node:20-alpine AS frontend-build
 WORKDIR /build
@@ -12,8 +15,6 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------- Stage 2: Runtime ----------
-# 默认 ubuntu:22.04，需要 GPU 时构建时传 --build-arg BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
-ARG BASE_IMAGE=ubuntu:22.04
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
