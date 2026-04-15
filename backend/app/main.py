@@ -28,7 +28,21 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger(__name__).error(f"任务恢复失败: {e}")
 
+    # 启动视频文件定期清理
+    from app.services.cleanup_service import cleanup_service
+    try:
+        await cleanup_service.start()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"清理服务启动失败: {e}")
+
     yield
+
+    # 停止清理服务
+    try:
+        await cleanup_service.stop()
+    except Exception:
+        pass
 
     # 停止拉流
     try:

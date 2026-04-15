@@ -1,4 +1,5 @@
 """报警推送服务 — 支持飞书/钉钉 webhook"""
+import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Optional
@@ -50,15 +51,22 @@ class AlertService:
             logger.warning(f"不支持的 webhook 类型: {webhook_type}")
             return False
 
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-            logger.info(f"报警推送成功: {webhook_type}, risk_level={risk_level}")
-            return True
-        except Exception as e:
-            logger.error(f"报警推送失败: {e}")
-            return False
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                logger.info(f"报警推送成功: {webhook_type}, risk_level={risk_level}")
+                return True
+            except Exception as e:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                if attempt < max_retries - 1:
+                    logger.warning(f"报警推送失败(第{attempt+1}次), {wait}s后重试: {e}")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"报警推送最终失败(已重试{max_retries}次): {e}")
+                    return False
 
     @staticmethod
     def _build_feishu_payload(content: str) -> Dict:

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     ALERT_WEBHOOK_URL: str = ""
     ALERT_WEBHOOK_TYPE: str = "feishu"  # feishu / dingtalk
 
+    # Cleanup
+    VIDEO_RETENTION_HOURS: int = 24  # 已分析视频保留时长（小时）
+
     # RTSP
     RTSP_SEGMENT_DURATION: int = 300  # 默认5分钟切片
 

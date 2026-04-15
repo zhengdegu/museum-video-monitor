@@ -17,6 +17,7 @@ class VideoPuller:
 
     def __init__(self):
         self._tasks: dict[int, asyncio.Task] = {}
+        self._processes: dict[int, asyncio.subprocess.Process] = {}
 
     async def start_all_cameras(self):
         """从数据库读取所有在线摄像头，启动拉流"""
@@ -85,7 +86,11 @@ class VideoPuller:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+        self._processes[camera_id] = proc
+        try:
+            _, stderr = await proc.communicate()
+        finally:
+            self._processes.pop(camera_id, None)
 
         if proc.returncode != 0:
             err_msg = stderr.decode(errors="replace")[-500:] if stderr else "unknown"
@@ -100,15 +105,13 @@ class VideoPuller:
         return filepath
 
     async def _trigger_analysis(self, camera_id: int, filepath: str, duration: int):
-        """切片保存后写入 source_video 记录并触发分析任务"""
+        """切片保存后写入 source_video 记录并通过 task_service 触发分析"""
         from app.database import async_session
         from app.models.video import SourceVideo
         from app.models.camera import Camera
-        from sqlalchemy import select
 
         async with async_session() as db:
             cam = await db.get(Camera, camera_id)
-            room_id = cam.room_id if cam else 0
 
             video = SourceVideo(
                 camera_id=camera_id,
@@ -124,29 +127,27 @@ class VideoPuller:
             await db.refresh(video)
             video_id = video.id
 
-        # 异步触发分析
-        asyncio.create_task(self._run_analysis(video_id, filepath, camera_id, room_id))
-
-    async def _run_analysis(self, video_id: int, filepath: str, camera_id: int, room_id: int):
-        """调用视频分析器"""
+        # 统一走任务队列
+        from app.services.task_service import task_service
         try:
-            from app.services.video_analyzer import video_analyzer
-            from app.database import async_session
-            from app.models.rule import Rule
-            from sqlalchemy import select
-
-            async with async_session() as db:
-                result = await db.execute(select(Rule).where(Rule.enabled == 1))
-                rules = [
-                    {"name": r.name, "code": r.code, "description": r.description, "enabled": 1}
-                    for r in result.scalars().all()
-                ]
-
-            await video_analyzer.analyze(video_id, filepath, camera_id, room_id, rules)
+            task_id = await task_service.create_task(video_id, camera_id)
+            asyncio.create_task(task_service._execute_task(task_id, video_id, camera_id))
         except Exception as e:
-            logger.error(f"自动分析失败 video_id={video_id}: {e}")
+            logger.error(f"创建分析任务失败 video_id={video_id}: {e}")
 
     async def stop_pull(self, camera_id: int):
+        # 先终止 ffmpeg 子进程
+        proc = self._processes.pop(camera_id, None)
+        if proc and proc.returncode is None:
+            try:
+                proc.terminate()
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except (asyncio.TimeoutError, ProcessLookupError):
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+
         task = self._tasks.pop(camera_id, None)
         if task and not task.done():
             task.cancel()
