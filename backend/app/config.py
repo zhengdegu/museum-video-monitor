@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     VLLM_VISION_URL: str = "http://localhost:8001/v1"
     VLLM_TEXT_MODEL: str = "Qwen3-32B"
     VLLM_VISION_MODEL: str = "Qwen3.5-35B-A3B"
-    VLLM_API_KEY: str = "not-needed"  # 本地 vLLM 不需要，云端 API 填真实 key
+    VLLM_API_KEY: str = "not-needed"  # 文本模型 API Key
+    VLLM_VISION_API_KEY: str = ""  # 视觉模型 API Key，为空时复用 VLLM_API_KEY
 
     # Embedding
     EMBEDDING_URL: str = ""  # 为空时复用 VLLM_TEXT_URL

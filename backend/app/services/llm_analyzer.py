@@ -17,7 +17,8 @@ class LLMAnalyzer:
     """调用 vLLM 进行多模态视频帧分析和裁判结论"""
 
     def __init__(self):
-        self.vision_client = AsyncOpenAI(base_url=settings.VLLM_VISION_URL, api_key=settings.VLLM_API_KEY)
+        vision_key = settings.VLLM_VISION_API_KEY or settings.VLLM_API_KEY
+        self.vision_client = AsyncOpenAI(base_url=settings.VLLM_VISION_URL, api_key=vision_key)
         self.text_client = AsyncOpenAI(base_url=settings.VLLM_TEXT_URL, api_key=settings.VLLM_API_KEY)
         self.vision_model = settings.VLLM_VISION_MODEL
         self.text_model = settings.VLLM_TEXT_MODEL
