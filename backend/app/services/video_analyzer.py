@@ -15,6 +15,7 @@ from app.services.llm_analyzer import llm_analyzer
 from app.services.rule_engine import rule_engine
 from app.services.milvus_service import milvus_service
 from app.services.storage_service import storage_service
+from app.services.alert_service import alert_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,15 @@ logger = logging.getLogger(__name__)
 class VideoAnalyzer:
     """视频分析全流程调度"""
 
-    async def analyze(self, video_id: int, local_path: str, camera_id: int, room_id: int, rules: List[Dict]):
+    async def analyze(self, video_id: int, local_path: str, camera_id: int, room_id: int, rules: List[Dict], task_id: Optional[int] = None):
         """分析一个视频的完整流程"""
+        from app.services.task_service import task_service
+
         logger.info(f"[视频分析] 开始: video_id={video_id}, path={local_path}")
+
+        # 更新任务状态为 running
+        if task_id:
+            await task_service.mark_running(task_id)
 
         try:
             # Step1-3: 人物检测与区间合并
@@ -51,10 +58,14 @@ class VideoAnalyzer:
             asyncio.ensure_future(storage_service.async_push_video(video_id, local_path))
 
             logger.info(f"[视频分析] 完成: video_id={video_id}, 事件数={len(all_events)}")
+            if task_id:
+                await task_service.mark_completed(task_id)
             return {"events": all_events, "status": "completed"}
 
         except Exception as e:
             logger.error(f"[视频分析] 失败: video_id={video_id}, error={e}")
+            if task_id:
+                await task_service.mark_failed(task_id, str(e))
             return {"events": [], "status": "error", "error": str(e)}
 
     # ── Step 1-3: 人物检测 ──────────────────────────────────
@@ -264,6 +275,28 @@ class VideoAnalyzer:
                 db.add(rule_hit)
             await db.commit()
             event["event_db_id"] = db_event.id
+
+        # 报警推送：risk_level >= 2 时触发
+        risk_level = judge_result.get("risk_level", 0)
+        if risk_level >= 2:
+            try:
+                from app.models.camera import Camera
+                from app.models.room import StorageRoom
+                async with async_session() as db:
+                    cam = await db.get(Camera, camera_id)
+                    room = await db.get(StorageRoom, room_id)
+                    camera_name = cam.name if cam else f"摄像头{camera_id}"
+                    room_name = room.name if room else f"库房{room_id}"
+                await alert_service.send_alert(
+                    event_type=event.get("judge_result", {}).get("summary", "violation"),
+                    room_name=room_name,
+                    camera_name=camera_name,
+                    risk_level=risk_level,
+                    event_time=datetime.now(),
+                    summary=merged_conclusion[:500] if merged_conclusion else "",
+                )
+            except Exception as e:
+                logger.error(f"报警推送异常: {e}")
 
     async def _step_create_aggregate(
         self, video_id: int, camera_id: int, room_id: int, all_events: List[Dict],

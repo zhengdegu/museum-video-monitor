@@ -95,26 +95,37 @@ services:
       - "80:80"
 
   # GPU 服务 — 需要 NVIDIA Container Toolkit
-  # 取消注释以启用 vLLM 推理服务
-  # vllm-text:
-  #   image: vllm/vllm-openai:latest
-  #   container_name: museum-vllm-text
-  #   runtime: nvidia
-  #   environment:
-  #     NVIDIA_VISIBLE_DEVICES: "0"
-  #   command: --model Qwen/Qwen3-32B --port 8000 --gpu-memory-utilization 0.9
-  #   ports:
-  #     - "8000:8000"
-  #
-  # vllm-vision:
-  #   image: vllm/vllm-openai:latest
-  #   container_name: museum-vllm-vision
-  #   runtime: nvidia
-  #   environment:
-  #     NVIDIA_VISIBLE_DEVICES: "1"
-  #   command: --model Qwen/Qwen3.5-35B-A3B --port 8000 --gpu-memory-utilization 0.9
-  #   ports:
-  #     - "8001:8000"
+  vllm-text:
+    image: vllm/vllm-openai:latest
+    container_name: museum-vllm-text
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "0"
+    command: --model Qwen/Qwen3-32B --port 8000 --gpu-memory-utilization 0.9
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-vision:
+    image: vllm/vllm-openai:latest
+    container_name: museum-vllm-vision
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "1"
+    command: --model Qwen/Qwen3.5-35B-A3B --port 8000 --gpu-memory-utilization 0.9
+    ports:
+      - "8001:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 volumes:
   mysql_data:

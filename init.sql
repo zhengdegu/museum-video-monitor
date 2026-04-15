@@ -175,6 +175,21 @@ CREATE TABLE IF NOT EXISTS museum_collection_movement (
     FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
 );
 
+-- 分析任务队列
+CREATE TABLE IF NOT EXISTS analysis_task (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    video_id BIGINT NOT NULL COMMENT '关联视频ID',
+    camera_id BIGINT NOT NULL COMMENT '关联摄像头ID',
+    status VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/running/completed/failed',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME NULL,
+    completed_at DATETIME NULL,
+    error_message TEXT NULL,
+    retry_count INT DEFAULT 0 COMMENT '已重试次数',
+    FOREIGN KEY (video_id) REFERENCES museum_source_video(id),
+    FOREIGN KEY (camera_id) REFERENCES museum_camera(id)
+);
+
 -- ========== 索引 ==========
 
 -- 事件表高频查询索引
@@ -203,6 +218,10 @@ CREATE INDEX idx_aggregate_session_start ON museum_event_aggregate(session_start
 
 -- 人物片段按视频查询
 CREATE INDEX idx_person_segment_video ON museum_person_segment(source_video_id);
+
+-- 分析任务索引
+CREATE INDEX idx_task_status ON analysis_task(status);
+CREATE INDEX idx_task_video_id ON analysis_task(video_id);
 
 -- 角色
 CREATE TABLE IF NOT EXISTS sys_role (

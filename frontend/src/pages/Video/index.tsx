@@ -121,7 +121,7 @@ export default function VideoList() {
     {
       title: '操作', render: (_: any, record: any) => (
         <Space>
-          <Button size="small" icon={<PlayCircleOutlined />} onClick={() => setPlayVideo({ src: record.remote_url || `/api/videos/${record.id}/stream` })}>播放</Button>
+          <Button size="small" icon={<PlayCircleOutlined />} onClick={() => setPlayVideo({ src: record.remote_url || `/api/v1/videos/${record.id}/stream` })}>播放</Button>
           {record.analysis_status === 2 && <Button size="small" icon={<FileSearchOutlined />} onClick={() => showDetail(record.id)}>分析详情</Button>}
           {record.analysis_status === 0 && <Button size="small" type="primary" onClick={() => handleAnalyze(record.id)}>开始分析</Button>}
           <Popconfirm title="确认删除？" onConfirm={() => deleteVideo(record.id).then(() => { message.success('已删除'); fetchData() })}>

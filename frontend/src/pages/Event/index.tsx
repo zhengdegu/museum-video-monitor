@@ -137,7 +137,7 @@ export default function EventList() {
               <Typography.Text strong>关联视频ID：</Typography.Text>
               <Typography.Text>{selected.source_video_id ?? '—'}</Typography.Text>
               {selected.source_video_id && (
-                <Button size="small" type="link" onClick={() => setPlayVideo({ src: `/api/videos/${selected.source_video_id}/stream` })}>
+                <Button size="small" type="link" onClick={() => setPlayVideo({ src: `/api/v1/videos/${selected.source_video_id}/stream` })}>
                   播放视频
                 </Button>
               )}

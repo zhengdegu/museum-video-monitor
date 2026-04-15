@@ -11,7 +11,30 @@ async def lifespan(app: FastAPI):
     # 启动时创建表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # 启动 RTSP 拉流服务
+    from app.services.video_puller import video_puller
+    try:
+        await video_puller.start_all_cameras()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"拉流服务启动失败: {e}")
+
+    # 恢复未完成的分析任务
+    from app.services.task_service import task_service
+    try:
+        await task_service.recover_stale_tasks()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"任务恢复失败: {e}")
+
     yield
+
+    # 停止拉流
+    try:
+        await video_puller.stop_all()
+    except Exception:
+        pass
     await engine.dispose()
 
 

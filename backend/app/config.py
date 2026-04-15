@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     YOLO_CONFIDENCE: float = 0.5
     YOLO_INPUT_SIZE: int = 640
 
+    # Alert Webhook
+    ALERT_WEBHOOK_URL: str = ""
+    ALERT_WEBHOOK_TYPE: str = "feishu"  # feishu / dingtalk
+
+    # RTSP
+    RTSP_SEGMENT_DURATION: int = 300  # 默认5分钟切片
+
     # Video Analysis
     SKIP_FRAME_INTERVAL: int = 25
     PERSON_EXPAND_SECONDS: float = 5.0

@@ -1,7 +1,9 @@
 """大模型分析服务 (Qwen3.5 多模态 + Qwen3 文本)"""
 import base64
+import json
 import logging
 import os
+import re
 from typing import List, Dict, Optional
 
 from openai import AsyncOpenAI
@@ -142,18 +144,49 @@ YOLO检测结果：
                 temperature=0.1,
             )
 
-            import json
             text = response.choices[0].message.content.strip()
-            # 尝试提取 JSON
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-            return json.loads(text)
+            return self._parse_json_robust(text)
 
         except Exception as e:
             logger.error(f"裁判判定失败: {e}")
             return {"summary": f"判定失败: {str(e)}", "risk_level": 0, "rule_hits": []}
+
+    @staticmethod
+    def _parse_json_robust(text: str) -> Dict:
+        """多层 fallback 的 JSON 解析"""
+        # 1. 尝试直接解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. 提取 ```json ... ``` 代码块
+        md_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+        if md_match:
+            try:
+                return json.loads(md_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 3. 提取 ``` ... ``` 代码块
+        code_match = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
+        if code_match:
+            try:
+                return json.loads(code_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 4. 正则提取最外层 { ... }
+        brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        # 5. 全部失败，返回兜底结构
+        logger.warning(f"JSON 解析全部失败，原始文本: {text[:200]}")
+        return {"summary": text[:500], "risk_level": 0, "rule_hits": []}
 
 
 # 全局单例

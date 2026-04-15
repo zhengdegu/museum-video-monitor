@@ -1,5 +1,6 @@
 """Milvus 向量存储服务"""
 import logging
+import time
 from typing import List, Dict, Optional
 
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
@@ -21,10 +22,22 @@ class MilvusService:
         self._loaded = False
 
     def connect(self):
-        if not self._connected:
-            connections.connect(host=settings.MILVUS_HOST, port=settings.MILVUS_PORT)
-            self._connected = True
-            logger.info(f"Milvus 已连接: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
+        if self._connected:
+            return
+        max_retries = 10
+        for attempt in range(1, max_retries + 1):
+            try:
+                connections.connect(host=settings.MILVUS_HOST, port=settings.MILVUS_PORT)
+                self._connected = True
+                logger.info(f"Milvus 已连接: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
+                return
+            except Exception as e:
+                logger.warning(f"Milvus 连接失败 (第{attempt}/{max_retries}次): {e}")
+                if attempt < max_retries:
+                    time.sleep(5)
+                else:
+                    logger.error("Milvus 连接重试耗尽，放弃连接")
+                    raise
 
     def create_collection(self):
         self.connect()

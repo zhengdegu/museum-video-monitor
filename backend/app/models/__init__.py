@@ -7,6 +7,7 @@ from app.models.rule import Rule, RuleHit
 from app.models.collection import Collection
 from app.models.user import User, Role
 from app.models.inventory import InventoryCheck, CollectionMovement
+from app.models.task import AnalysisTask
 
 __all__ = [
     "StorageRoom", "Camera", "SourceVideo",
@@ -15,4 +16,5 @@ __all__ = [
     "Rule", "RuleHit",
     "Collection", "User", "Role",
     "InventoryCheck", "CollectionMovement",
+    "AnalysisTask",
 ]
