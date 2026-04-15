@@ -1,6 +1,7 @@
 """pytest 全局 fixtures — 内存 SQLite + httpx AsyncClient"""
 import os
 import sys
+from unittest.mock import MagicMock
 
 # 在任何 app 模块导入之前设置必要的环境变量
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest")
@@ -9,13 +10,31 @@ os.environ.setdefault("MYSQL_PASSWORD", "test")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test")
 os.environ.setdefault("MINIO_SECRET_KEY", "test")
 
+# Mock 掉 CI 上可能缺失或有依赖冲突的重量级模块
+# 必须在 import app.* 之前执行
+_heavy_modules = [
+    "ultralytics",
+    "cv2",
+]
+for _mod in _heavy_modules:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = MagicMock()
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from httpx import AsyncClient, ASGITransport
 
 from app.database import Base, get_db
-from app.main import app
+
+# 显式导入并验证 FastAPI app 实例
+from app.main import app as fastapi_app
+from fastapi import FastAPI
+assert isinstance(fastapi_app, FastAPI), (
+    f"Expected FastAPI instance, got {type(fastapi_app)}. "
+    "Import chain likely failed silently."
+)
+
 # 确保所有 model 都被导入，以便 create_all 能建表
 import app.models  # noqa: F401
 from app.utils.security import hash_password, create_access_token
@@ -38,7 +57,7 @@ async def _override_get_db():
             raise
 
 
-app.dependency_overrides[get_db] = _override_get_db
+fastapi_app.dependency_overrides[get_db] = _override_get_db
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -62,7 +81,7 @@ async def db():
 @pytest_asyncio.fixture
 async def client():
     """httpx AsyncClient，走 ASGI 直连"""
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
