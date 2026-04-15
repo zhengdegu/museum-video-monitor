@@ -40,23 +40,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio && \
     chmod +x /usr/local/bin/minio
 
-# ---- etcd ----
-ENV ETCD_VER=v3.5.5
-RUN curl -fsSL https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz | \
-    tar xz -C /tmp && \
-    mv /tmp/etcd-${ETCD_VER}-linux-amd64/etcd /usr/local/bin/ && \
-    mv /tmp/etcd-${ETCD_VER}-linux-amd64/etcdctl /usr/local/bin/ && \
-    rm -rf /tmp/etcd-*
-
-# ---- Milvus standalone ----
-RUN curl -fsSL https://github.com/milvus-io/milvus/releases/download/v2.4.4/milvus_2.4.4-1_amd64.deb -o /tmp/milvus.deb && \
-    dpkg -i /tmp/milvus.deb || apt-get install -f -y && \
-    rm /tmp/milvus.deb
+# ---- Milvus Lite（纯Python内嵌，无需独立安装） ----
+# 通过 pip 安装 pymilvus[lite]，在 requirements.txt 或下方安装
 
 # ---- Python backend ----
 WORKDIR /app/backend
 COPY backend/requirements.txt .
-RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt && \
+    python3.11 -m pip install --no-cache-dir --break-system-packages "pymilvus[lite]"
 
 COPY backend/ .
 RUN mkdir -p /app/data/videos /app/data/frames /app/models
@@ -87,19 +78,15 @@ ENV SECRET_KEY=change-me-in-production \
     MYSQL_USER=root \
     MYSQL_PASSWORD=root \
     MYSQL_DATABASE=museum_monitor \
-    MILVUS_HOST=127.0.0.1 \
-    MILVUS_PORT=19530 \
+    MILVUS_URI=./data/milvus_lite.db \
     MINIO_ENDPOINT=127.0.0.1:9000 \
     MINIO_ACCESS_KEY=minioadmin \
     MINIO_SECRET_KEY=minioadmin \
     MINIO_ROOT_USER=minioadmin \
-    MINIO_ROOT_PASSWORD=minioadmin \
-    ETCD_AUTO_COMPACTION_MODE=revision \
-    ETCD_AUTO_COMPACTION_RETENTION=1000 \
-    ETCD_QUOTA_BACKEND_BYTES=4294967296
+    MINIO_ROOT_PASSWORD=minioadmin
 
-EXPOSE 80 8080 3306 9000 9001 19530
+EXPOSE 80 8080 3306 9000 9001
 
-VOLUME ["/var/lib/mysql", "/data/minio", "/data/etcd", "/var/lib/milvus", "/app/data"]
+VOLUME ["/var/lib/mysql", "/data/minio", "/app/data"]
 
 ENTRYPOINT ["/entrypoint.sh"]
