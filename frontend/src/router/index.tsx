@@ -10,6 +10,7 @@ import RuleList from '../pages/Rule'
 import ChatPage from '../pages/Chat'
 import CollectionList from '../pages/Collection'
 import UserList from '../pages/System'
+import InventoryPage from '../pages/Inventory'
 import { useAuthStore } from '../store/auth'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -30,6 +31,7 @@ export default function AppRouter() {
         <Route path="rules" element={<RuleList />} />
         <Route path="chat" element={<ChatPage />} />
         <Route path="collections" element={<CollectionList />} />
+        <Route path="inventory" element={<InventoryPage />} />
         <Route path="users" element={<UserList />} />
       </Route>
     </Routes>

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base
-from app.api import rooms, cameras, videos, events, rules, collections, chat, auth
+from app.api import rooms, cameras, videos, events, rules, collections, chat, auth, inventory
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(events.router, prefix="/api")
 app.include_router(rules.router, prefix="/api")
 app.include_router(collections.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(inventory.router, prefix="/api")
 
 
 @app.get("/api/health")

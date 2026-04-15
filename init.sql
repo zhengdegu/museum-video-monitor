@@ -145,6 +145,36 @@ CREATE TABLE IF NOT EXISTS museum_collection (
     FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
 );
 
+-- 盘点记录
+CREATE TABLE IF NOT EXISTS museum_inventory_check (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    room_id BIGINT NOT NULL COMMENT '库房ID',
+    check_date DATE NOT NULL COMMENT '盘点日期',
+    total_count INT DEFAULT 0 COMMENT '应盘数量',
+    checked_count INT DEFAULT 0 COMMENT '已盘数量',
+    matched_count INT DEFAULT 0 COMMENT '一致数量',
+    mismatched_count INT DEFAULT 0 COMMENT '不一致数量',
+    status TINYINT DEFAULT 0 COMMENT '0进行中 1已完成',
+    operator VARCHAR(50) COMMENT '操作人',
+    remark TEXT COMMENT '备注',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
+-- 进出库记录
+CREATE TABLE IF NOT EXISTS museum_collection_movement (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    collection_id BIGINT NOT NULL COMMENT '藏品ID',
+    room_id BIGINT COMMENT '库房ID',
+    movement_type TINYINT NOT NULL COMMENT '1入库 2出库 3移库',
+    reason VARCHAR(200) COMMENT '原因',
+    operator VARCHAR(50) COMMENT '操作人',
+    moved_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (collection_id) REFERENCES museum_collection(id),
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
 -- 角色
 CREATE TABLE IF NOT EXISTS sys_role (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,

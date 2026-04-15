@@ -18,9 +18,6 @@ from app.services.storage_service import storage_service
 
 logger = logging.getLogger(__name__)
 
-# 保存后台任务引用，防止被 GC 回收
-_background_tasks: set = set()
-
 
 class VideoAnalyzer:
     """视频分析全流程调度"""
@@ -51,10 +48,29 @@ class VideoAnalyzer:
             for seg_idx, (seg_start, seg_end) in enumerate(merged_intervals):
                 logger.info(f"[分析片段 {seg_idx+1}/{len(merged_intervals)}] {seg_start:.1f}s - {seg_end:.1f}s")
 
+                # 写入 person_segment 记录
+                from app.database import async_session
+                from app.models.segment import PersonSegment, VideoSegment
+                from app.models.event import Event, EventAggregate
+                from app.models.rule import RuleHit
+
                 # Step4: 60s 切分 + 1秒1帧抽图
                 sub_segments = self._split_segment(seg_start, seg_end)
                 merged_conclusion = ""
                 person_count = 0
+
+                person_segment_id = None
+                async with async_session() as db:
+                    ps = PersonSegment(
+                        source_video_id=video_id,
+                        start_time=seg_start,
+                        end_time=seg_end,
+                        person_count=0,
+                    )
+                    db.add(ps)
+                    await db.commit()
+                    await db.refresh(ps)
+                    person_segment_id = ps.id
 
                 for sub_idx, (sub_start, sub_end) in enumerate(sub_segments):
                     # 抽帧
@@ -88,6 +104,30 @@ class VideoAnalyzer:
                     # Step6: 增量合并结论
                     merged_conclusion = await llm_analyzer.merge_conclusions(conclusion, merged_conclusion)
 
+                    # 写入 video_segment 记录
+                    async with async_session() as db:
+                        vs = VideoSegment(
+                            person_segment_id=person_segment_id,
+                            segment_index=sub_idx,
+                            start_time=sub_start,
+                            end_time=sub_end,
+                            frame_count=len(frame_paths),
+                            analysis_result={"conclusion": conclusion},
+                            merged_summary=merged_conclusion[:4000] if merged_conclusion else None,
+                        )
+                        db.add(vs)
+                        await db.commit()
+
+                # 更新 person_segment 的人数
+                async with async_session() as db:
+                    from sqlalchemy import select as sa_select
+                    from app.models.segment import PersonSegment as PS
+                    result = await db.execute(sa_select(PS).where(PS.id == person_segment_id))
+                    ps_record = result.scalar_one_or_none()
+                    if ps_record:
+                        ps_record.person_count = person_count
+                        await db.commit()
+
                 # Step7: 裁判判定
                 logger.info(f"  [Step7] 裁判判定...")
                 judge_result = await llm_analyzer.judge(merged_conclusion, rules)
@@ -112,6 +152,37 @@ class VideoAnalyzer:
                 }
                 all_events.append(event)
 
+                # 写入 event 记录到数据库
+                async with async_session() as db:
+                    db_event = Event(
+                        source_video_id=video_id,
+                        person_segment_id=person_segment_id,
+                        camera_id=camera_id,
+                        room_id=room_id,
+                        event_time=datetime.now(),
+                        event_type="violation" if event["rule_hits"] else "normal",
+                        person_count=person_count,
+                        description=judge_result.get("summary", ""),
+                        ai_conclusion=merged_conclusion[:4000] if merged_conclusion else None,
+                    )
+                    db.add(db_event)
+                    await db.commit()
+                    await db.refresh(db_event)
+
+                    # 写入 rule_hit 记录
+                    for hit in event["rule_hits"]:
+                        rule_hit = RuleHit(
+                            event_id=db_event.id,
+                            rule_id=0,  # 通过 code 关联
+                            hit_time=datetime.now(),
+                            confidence=hit.get("confidence", 0),
+                            detail=hit.get("detail", ""),
+                        )
+                        db.add(rule_hit)
+                    await db.commit()
+
+                    event["event_db_id"] = db_event.id
+
                 # Step8: 向量化写入 Milvus
                 try:
                     from app.services.rag_service import rag_service
@@ -131,10 +202,24 @@ class VideoAnalyzer:
                 except Exception as e:
                     logger.error(f"  [Step8] Milvus 写入失败: {e}")
 
-            # 异步推送视频到线上存储，保存 task 引用防止 GC
-            task = asyncio.create_task(storage_service.async_push_video(video_id, local_path))
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+            # 创建聚合事件记录
+            if all_events:
+                async with async_session() as db:
+                    agg = EventAggregate(
+                        room_id=room_id,
+                        camera_id=camera_id,
+                        session_start=datetime.now(),
+                        session_end=datetime.now(),
+                        total_events=len(all_events),
+                        rule_hits=sum(len(e.get("rule_hits", [])) for e in all_events),
+                        summary=f"视频 {video_id} 分析完成，共 {len(all_events)} 个事件",
+                        risk_level=max(e.get("risk_level", 0) for e in all_events),
+                    )
+                    db.add(agg)
+                    await db.commit()
+
+            # 异步推送视频到线上存储
+            asyncio.ensure_future(storage_service.async_push_video(video_id, local_path))
 
             logger.info(f"[视频分析] 完成: video_id={video_id}, 事件数={len(all_events)}")
             return {"events": all_events, "status": "completed"}

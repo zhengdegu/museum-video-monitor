@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.video import SourceVideo
 from app.models.camera import Camera
 from app.models.rule import Rule
+from app.models.segment import PersonSegment, VideoSegment
 from app.schemas.event import VideoOut
 from app.schemas.common import ok, fail, PageResult
 from app.utils.deps import get_current_user
@@ -105,7 +106,7 @@ async def upload_init(
 @router.post("/upload/chunk")
 async def upload_chunk(
     upload_id: str = Form(...),
-    chunk_index: in...),
+    chunk_index: int = Form(...),
     file: UploadFile = File(...),
     _=Depends(get_current_user),
 ):
@@ -187,12 +188,13 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depe
 
 
 @router.delete("/{video_id}")
-async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depet_current_user)):
+async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     result = await db.execute(select(SourceVideo).where(SourceVideo.id == video_id))
     video = result.scalar_one_or_none()
     if not video:
         return fail("视频不存在", 404)
     await db.delete(video)
+    await db.commit()
     return ok(message="删除成功")
 
 
@@ -216,7 +218,7 @@ async def _run_analysis(video_id: int, local_path: str, camera_id: int, room_id:
                 video = result.scalar_one_or_none()
                 if video:
                     video.analysis_status = 3
-          await db.commit()
+                    await db.commit()
         except Exception:
             logger.error(f"更新分析状态失败: video_id={video_id}")
 
@@ -252,3 +254,45 @@ async def trigger_analyze(video_id: int, db: AsyncSession = Depends(get_db), _=D
     task.add_done_callback(_background_tasks.discard)
 
     return ok(message="已提交分析任务")
+
+
+@router.get("/{video_id}/segments")
+async def get_video_segments(video_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """获取视频的分析片段详情（人物片段 + 动作片段）"""
+    # 人物片段
+    ps_result = await db.execute(
+        select(PersonSegment)
+        .where(PersonSegment.source_video_id == video_id)
+        .order_by(PersonSegment.start_time)
+    )
+    person_segments = ps_result.scalars().all()
+
+    data = []
+    for ps in person_segments:
+        vs_result = await db.execute(
+            select(VideoSegment)
+            .where(VideoSegment.person_segment_id == ps.id)
+            .order_by(VideoSegment.segment_index)
+        )
+        video_segs = vs_result.scalars().all()
+
+        data.append({
+            "id": ps.id,
+            "start_time": ps.start_time,
+            "end_time": ps.end_time,
+            "person_count": ps.person_count,
+            "segments": [
+                {
+                    "id": vs.id,
+                    "segment_index": vs.segment_index,
+                    "start_time": vs.start_time,
+                    "end_time": vs.end_time,
+                    "frame_count": vs.frame_count,
+                    "analysis_result": vs.analysis_result,
+                    "merged_summary": vs.merged_summary,
+                }
+                for vs in video_segs
+            ],
+        })
+
+    return ok(data=data)

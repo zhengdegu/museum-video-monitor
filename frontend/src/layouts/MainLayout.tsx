@@ -5,7 +5,7 @@ import {
   DashboardOutlined, VideoCameraOutlined, BankOutlined,
   AlertOutlined, SafetyCertificateOutlined, MessageOutlined,
   GoldOutlined, UserOutlined, CameraOutlined, LogoutOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, AuditOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 
@@ -20,6 +20,7 @@ const menuItems = [
   { key: '/rules', icon: <SafetyCertificateOutlined />, label: '规则管理' },
   { key: '/chat', icon: <MessageOutlined />, label: '智能交互' },
   { key: '/collections', icon: <GoldOutlined />, label: '藏品管理' },
+  { key: '/inventory', icon: <AuditOutlined />, label: '盘点进出库' },
   { key: '/users', icon: <UserOutlined />, label: '用户管理' },
 ]
 

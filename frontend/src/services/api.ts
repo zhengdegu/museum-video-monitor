@@ -27,6 +27,10 @@ export const getVideos = (params?: any) => request.get('/videos', { params })
 export const getVideo = (id: number) => request.get(`/videos/${id}`)
 export const deleteVideo = (id: number) => request.delete(`/videos/${id}`)
 export const triggerAnalyze = (id: number) => request.post(`/videos/${id}/analyze`)
+export const uploadInit = (data: { camera_id: number; filename: string; file_size: number; total_chunks: number }) =>
+  request.post('/videos/upload/init', data)
+export const uploadChunk = (data: FormData) => request.post('/videos/upload/chunk', data)
+export const uploadComplete = (data: FormData) => request.post('/videos/upload/complete', data)
 
 // Events
 export const getEvents = (params?: any) => request.get('/events', { params })
@@ -43,6 +47,7 @@ export const createRule = (data: any) => request.post('/rules', data)
 export const updateRule = (id: number, data: any) => request.put(`/rules/${id}`, data)
 export const toggleRule = (id: number) => request.put(`/rules/${id}/toggle`)
 export const deleteRule = (id: number) => request.delete(`/rules/${id}`)
+export const getRuleHitStats = () => request.get('/rules/stats/hit-counts')
 
 // Collections
 export const getCollections = (params?: any) => request.get('/collections', { params })
@@ -53,3 +58,15 @@ export const deleteCollection = (id: number) => request.delete(`/collections/${i
 
 // Chat
 export const sendChat = (data: { message: string; session_id?: string }) => request.post('/chat', data)
+
+// Inventory
+export const getInventoryChecks = (params?: any) => request.get('/inventory/checks', { params })
+export const createInventoryCheck = (data: any) => request.post('/inventory/checks', data)
+export const updateInventoryCheck = (id: number, data: any) => request.put(`/inventory/checks/${id}`, data)
+export const deleteInventoryCheck = (id: number) => request.delete(`/inventory/checks/${id}`)
+export const exportInventoryCheck = (id: number) => `/api/inventory/checks/${id}/export`
+export const getMovements = (params?: any) => request.get('/inventory/movements', { params })
+export const createMovement = (data: any) => request.post('/inventory/movements', data)
+
+// Video Segments (analysis detail)
+export const getVideoSegments = (videoId: number) => request.get(`/videos/${videoId}/segments`)

@@ -6,6 +6,7 @@ from app.models.event import Event, EventAggregate
 from app.models.rule import Rule, RuleHit
 from app.models.collection import Collection
 from app.models.user import User, Role
+from app.models.inventory import InventoryCheck, CollectionMovement
 
 __all__ = [
     "StorageRoom", "Camera", "SourceVideo",
@@ -13,4 +14,5 @@ __all__ = [
     "Event", "EventAggregate",
     "Rule", "RuleHit",
     "Collection", "User", "Role",
+    "InventoryCheck", "CollectionMovement",
 ]

@@ -13,6 +13,11 @@ services:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
@@ -22,6 +27,8 @@ services:
       ETCD_AUTO_COMPACTION_RETENTION: "1000"
       ETCD_QUOTA_BACKEND_BYTES: "4294967296"
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - etcd_data:/etcd
 
   milvus:
     image: milvusdb/milvus:v2.4.4
@@ -34,6 +41,7 @@ services:
       MINIO_ADDRESS: minio:9000
     ports:
       - "19530:19530"
+    command: ["milvus", "run", "standalone"]
     volumes:
       - milvus_data:/var/lib/milvus
 
@@ -41,8 +49,8 @@ services:
     image: minio/minio:latest
     container_name: museum-minio
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -54,9 +62,12 @@ services:
     build: ./backend
     container_name: museum-backend
     depends_on:
-      - mysql
-      - milvus
-      - minio
+      mysql:
+        condition: service_healthy
+      milvus:
+        condition: service_started
+      minio:
+        condition: service_started
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -107,6 +118,7 @@ services:
 
 volumes:
   mysql_data:
+  etcd_data:
   milvus_data:
   minio_data:
   video_data:

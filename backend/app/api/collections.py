@@ -67,7 +67,7 @@ async def update_collection(coll_id: int, body: CollectionUpdate, db: AsyncSessi
 
 
 @router.delete("/{coll_id}")
-async def delelection(coll_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def delete_collection(coll_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     result = await db.execute(select(Collection).where(Collection.id == coll_id))
     coll = result.scalar_one_or_none()
     if not coll:

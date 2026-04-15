@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
-from app.models.rule import Rule
+from app.models.rule import Rule, RuleHit
 from app.schemas.rule import RuleCreate, RuleUpdate, RuleOut
 from app.schemas.common import ok, fail, PageResult
 from app.utils.deps import get_current_user
@@ -79,3 +79,21 @@ async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_db), _=Depend
         return fail("规则不存在", 404)
     await db.delete(rule)
     return ok(message="删除成功")
+
+
+@router.get("/stats/hit-counts")
+async def rule_hit_stats(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """每条规则的命中次数统计"""
+    query = (
+        select(RuleHit.rule_id, func.count().label("hit_count"))
+        .group_by(RuleHit.rule_id)
+    )
+    rows = (await db.execute(query)).all()
+    hit_map = {r.rule_id: r.hit_count for r in rows}
+
+    rules_result = await db.execute(select(Rule).order_by(Rule.id.asc()))
+    result = [
+        {"rule_id": rule.id, "rule_name": rule.name, "code": rule.code, "hit_count": hit_map.get(rule.id, 0)}
+        for rule in rules_result.scalars().all()
+    ]
+    return ok(data=result)
