@@ -46,8 +46,10 @@ RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/
 # ---- Python backend ----
 WORKDIR /app/backend
 COPY backend/requirements.txt .
-RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt && \
-    python3.11 -m pip install --no-cache-dir --break-system-packages "milvus-lite" "pymilvus>=2.4.0"
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
+# 尝试安装 milvus-lite（内嵌Milvus），失败则跳过（可用外部 Milvus Server 替代）
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages "milvus-lite" || \
+    echo "WARN: milvus-lite install failed, will need external Milvus server"
 
 COPY backend/ .
 RUN mkdir -p /app/data/videos /app/data/frames /app/models
