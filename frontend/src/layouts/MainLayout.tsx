@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Menu, Button, theme } from 'antd'
+import { Layout, Menu, Button, Avatar, Dropdown, theme } from 'antd'
 import {
   DashboardOutlined, VideoCameraOutlined, BankOutlined,
   AlertOutlined, SafetyCertificateOutlined, MessageOutlined,
@@ -8,6 +8,7 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, AuditOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
+import { wanderMapColors } from '../theme'
 
 const { Header, Sider, Content } = Layout
 
@@ -28,14 +29,59 @@ export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const logout = useAuthStore((s) => s.logout)
-  const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken()
+  const { logout, user } = useAuthStore()
+  const { token: { borderRadiusLG } } = theme.useToken()
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider trigger={null} collapsible collapsed={collapsed} theme="dark">
-        <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: collapsed ? 14 : 16, fontWeight: 'bold' }}>
-          {collapsed ? '监控' : '视频智能监控平台'}
+      <Sider
+        trigger={null}
+        collapsible
+        collapsed={collapsed}
+        width={240}
+        theme="dark"
+        style={{
+          background: `linear-gradient(180deg, ${wanderMapColors.primary} 0%, ${wanderMapColors.siderDarkBg} 100%)`,
+          overflow: 'auto',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 10,
+        }}
+      >
+        <div
+          style={{
+            height: 64,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            padding: '0 16px',
+            borderBottom: '1px solid rgba(255,255,255,0.12)',
+          }}
+        >
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 16,
+              color: '#fff',
+              flexShrink: 0,
+            }}
+          >
+            🏛
+          </div>
+          {!collapsed && (
+            <span style={{ color: '#fff', fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap' }}>
+              智能监控平台
+            </span>
+          )}
         </div>
         <Menu
           theme="dark"
@@ -43,14 +89,71 @@ export default function MainLayout() {
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
-        />
+          style={{
+            background: 'transparent',
+            borderRight: 'none',
+            marginTop: 8,
+          }}
+    />
       </Sider>
-      <Layout>
-        <Header style={{ padding: '0 16px', background: colorBgContainer, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Button type="text" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed(!collapsed)} />
-          <Button type="text" icon={<LogoutOutlined />} onClick={() => { logout(); navigate('/login') }}>退出</Button>
+
+      <Layout style={{ marginLeft: collapsed ? 80 : 240, transition: 'margin-left 0.2s' }}>
+        <Header
+          style={{
+            padding: '0 24px',
+            background: wanderMapColors.surface,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #f0f0f0',
+            position: 'sticky',
+            top: 0,
+            zIndex: 9,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+          }}
+        >
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ fontSize: 16, width: 40, height: 40 }}
+          />
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'logout',
+                  icon: <LogoutOutlined />,
+                  label: '退出登录',
+                  onClick: () => { logout(); navigate('/login') },
+                },
+              ],
+            }}
+            placement="bottomRight"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <Avatar
+                size={34}
+                style={{ background: wanderMapColors.primary }}
+                icon={<UserOutlined />}
+              />
+              <span style={{ color: wanderMapColors.textPrimary, fontSize: 14 }}>
+                {user?.username || '管理员'}
+              </span>
+            </div>
+          </Dropdown>
         </Header>
-        <Content style={{ margin: 16, padding: 24, background: colorBgContainer, borderRadius: borderRadiusLG, minHeight: 280 }}>
+
+        <Content
+          style={{
+            margin: 20,
+            padding: 24,
+            background: wanderMapColors.surface,
+            borderRadius: borderRadiusLG,
+            minHeight: 280,
+            boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
+          }}
+        >
           <Outlet />
         </Content>
       </Layout>
