@@ -1,7 +1,6 @@
 """pytest 全局 fixtures — 内存 SQLite + httpx AsyncClient"""
 import os
 import sys
-from unittest.mock import MagicMock
 
 # 在任何 app 模块导入之前设置必要的环境变量
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest")
@@ -9,11 +8,6 @@ os.environ.setdefault("MYSQL_USER", "test")
 os.environ.setdefault("MYSQL_PASSWORD", "test")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test")
 os.environ.setdefault("MINIO_SECRET_KEY", "test")
-
-# Mock 掉 CI 上可能有依赖冲突的重量级模块
-for mod_name in ["pymilvus", "ultralytics", "cv2"]:
-    if mod_name not in sys.modules:
-        sys.modules[mod_name] = MagicMock()
 
 import pytest
 import pytest_asyncio
