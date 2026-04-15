@@ -16,8 +16,10 @@ class RAGService:
     """基于 Milvus + bge + Qwen3 的 RAG 检索链路"""
 
     def __init__(self):
-        self.embed_client = AsyncOpenAI(base_url=settings.VLLM_TEXT_URL, api_key="not-needed")
-        self.llm_client = AsyncOpenAI(base_url=settings.VLLM_TEXT_URL, api_key="not-needed")
+        embed_url = settings.EMBEDDING_URL or settings.VLLM_TEXT_URL
+        embed_key = settings.EMBEDDING_API_KEY or settings.VLLM_API_KEY
+        self.embed_client = AsyncOpenAI(base_url=embed_url, api_key=embed_key)
+        self.llm_client = AsyncOpenAI(base_url=settings.VLLM_TEXT_URL, api_key=settings.VLLM_API_KEY)
         self.text_model = settings.VLLM_TEXT_MODEL
         self.embed_model = settings.EMBEDDING_MODEL
 

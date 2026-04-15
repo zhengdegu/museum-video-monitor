@@ -24,14 +24,17 @@ class Settings(BaseSettings):
     MILVUS_PORT: int = 19530
     MILVUS_COLLECTION: str = "museum_events"
 
-    # vLLM
+    # LLM API（兼容 OpenAI 协议，支持本地 vLLM / 通义千问 / DeepSeek / OpenAI 等）
     VLLM_TEXT_URL: str = "http://localhost:8000/v1"
     VLLM_VISION_URL: str = "http://localhost:8001/v1"
     VLLM_TEXT_MODEL: str = "Qwen3-32B"
     VLLM_VISION_MODEL: str = "Qwen3.5-35B-A3B"
+    VLLM_API_KEY: str = "not-needed"  # 本地 vLLM 不需要，云端 API 填真实 key
 
     # Embedding
+    EMBEDDING_URL: str = ""  # 为空时复用 VLLM_TEXT_URL
     EMBEDDING_MODEL: str = "bge-large-zh-v1.5"
+    EMBEDDING_API_KEY: str = ""  # 为空时复用 VLLM_API_KEY
     RERANKER_MODEL: str = "bge-reranker-v2-m3"
 
     # MinIO
