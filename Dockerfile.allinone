@@ -1,0 +1,101 @@
+# ============================================================
+# Museum Video Monitor — All-in-One Image
+# Includes: Nginx + FastAPI + MySQL 8.4 + Milvus + MinIO + etcd
+# ============================================================
+
+# ---------- Stage 1: Build frontend ----------
+FROM node:20-alpine AS frontend-build
+WORKDIR /build
+COPY frontend/package.json ./
+RUN npm install --legacy-peer-deps
+COPY frontend/ ./
+RUN npm run build
+
+# ---------- Stage 2: Runtime ----------
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+# ---- System packages ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl wget gnupg2 lsb-release ca-certificates \
+    supervisor nginx \
+    python3.11 python3.11-venv python3.11-dev python3-pip \
+    ffmpeg libgl1-mesa-glx libglib2.0-0 \
+    libaio1 libncurses5 libnuma1 libmecab2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- MySQL 8.4 ----
+RUN wget -q https://repo.mysql.com/apt/ubuntu/pool/mysql-8.4-lts/mysql-community-server-core_8.4.4-1ubuntu22.04_amd64.deb 2>/dev/null || true
+RUN curl -fsSL https://repo.mysql.com//RPM-GPG-KEY-mysql-2023 | gpg --dearmor -o /usr/share/keyrings/mysql.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/mysql.gpg] http://repo.mysql.com/apt/ubuntu jammy mysql-8.4-lts" > /etc/apt/sources.list.d/mysql.list && \
+    apt-get update && apt-get install -y --no-install-recommends mysql-server && \
+    rm -rf /var/lib/apt/lists/*
+
+# ---- MinIO ----
+RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio && \
+    chmod +x /usr/local/bin/minio
+
+# ---- etcd ----
+ENV ETCD_VER=v3.5.5
+RUN curl -fsSL https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz | \
+    tar xz -C /tmp && \
+    mv /tmp/etcd-${ETCD_VER}-linux-amd64/etcd /usr/local/bin/ && \
+    mv /tmp/etcd-${ETCD_VER}-linux-amd64/etcdctl /usr/local/bin/ && \
+    rm -rf /tmp/etcd-*
+
+# ---- Milvus standalone ----
+RUN curl -fsSL https://github.com/milvus-io/milvus/releases/download/v2.4.4/milvus_2.4.4-1_amd64.deb -o /tmp/milvus.deb && \
+    dpkg -i /tmp/milvus.deb || apt-get install -f -y && \
+    rm /tmp/milvus.deb
+
+# ---- Python backend ----
+WORKDIR /app/backend
+COPY backend/requirements.txt .
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
+
+COPY backend/ .
+RUN mkdir -p /app/data/videos /app/data/frames /app/models
+
+# ---- Frontend static files ----
+COPY --from=frontend-build /build/dist /usr/share/nginx/html
+
+# ---- Nginx config (all-in-one: proxy to localhost:8080) ----
+COPY deploy/nginx-allinone.conf /etc/nginx/sites-available/default
+
+# ---- MySQL init ----
+COPY init.sql /docker-entrypoint-initdb.d/init.sql
+
+# ---- Data directories ----
+RUN mkdir -p /var/lib/mysql /data/minio /data/etcd /var/lib/milvus /var/log/supervisor
+
+# ---- Supervisor config ----
+COPY deploy/supervisord.conf /etc/supervisor/conf.d/museum.conf
+
+# ---- Startup script ----
+COPY deploy/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# ---- Environment defaults ----
+ENV MYSQL_HOST=127.0.0.1 \
+    MYSQL_PORT=3306 \
+    MYSQL_USER=root \
+    MYSQL_PASSWORD=root \
+    MYSQL_DATABASE=museum_monitor \
+    MILVUS_HOST=127.0.0.1 \
+    MILVUS_PORT=19530 \
+    MINIO_ENDPOINT=127.0.0.1:9000 \
+    MINIO_ACCESS_KEY=minioadmin \
+    MINIO_SECRET_KEY=minioadmin \
+    MINIO_ROOT_USER=minioadmin \
+    MINIO_ROOT_PASSWORD=minioadmin \
+    ETCD_AUTO_COMPACTION_MODE=revision \
+    ETCD_AUTO_COMPACTION_RETENTION=1000 \
+    ETCD_QUOTA_BACKEND_BYTES=4294967296
+
+EXPOSE 80 8080 3306 9000 9001 19530
+
+VOLUME ["/var/lib/mysql", "/data/minio", "/data/etcd", "/var/lib/milvus", "/app/data"]
+
+ENTRYPOINT ["/entrypoint.sh"]
