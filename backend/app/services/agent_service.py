@@ -1,7 +1,7 @@
 """Agent 巡检服务 — 自动化监控、汇报、报警"""
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+from typing import List, Dict
 
 from sqlalchemy import select, func, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
