@@ -1,14 +1,14 @@
-from sqlalchemy import Column, BigInteger, String, Text, SmallInteger, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, SmallInteger, DateTime, ForeignKey, func
 from app.database import Base
 
 
 class Collection(Base):
     __tablename__ = "museum_collection"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
     code = Column(String(50), unique=True)
-    room_id = Column(BigInteger, ForeignKey("museum_storage_room.id"))
+    room_id = Column(Integer, ForeignKey("museum_storage_room.id"))
     category = Column(String(50))
     description = Column(Text)
     image_url = Column(String(500))

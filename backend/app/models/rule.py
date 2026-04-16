@@ -1,11 +1,11 @@
-from sqlalchemy import Column, BigInteger, String, Float, Text, DateTime, SmallInteger, ForeignKey, JSON, func
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, SmallInteger, ForeignKey, JSON, func
 from app.database import Base
 
 
 class Rule(Base):
     __tablename__ = "museum_rule"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False, comment="规则名称")
     code = Column(String(50), unique=True, comment="规则编码")
     description = Column(Text, comment="规则描述")
@@ -18,9 +18,9 @@ class Rule(Base):
 class RuleHit(Base):
     __tablename__ = "museum_rule_hit"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    event_id = Column(BigInteger, ForeignKey("museum_event.id"), nullable=False)
-    rule_id = Column(BigInteger, ForeignKey("museum_rule.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey("museum_event.id"), nullable=False)
+    rule_id = Column(Integer, ForeignKey("museum_rule.id"), nullable=False)
     hit_time = Column(DateTime, nullable=False)
     confidence = Column(Float, comment="置信度")
     evidence_snapshot = Column(String(500), comment="证据截图")

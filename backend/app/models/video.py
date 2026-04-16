@@ -5,8 +5,8 @@ from app.database import Base
 class SourceVideo(Base):
     __tablename__ = "museum_source_video"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    camera_id = Column(BigInteger, ForeignKey("museum_camera.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    camera_id = Column(Integer, ForeignKey("museum_camera.id"), nullable=False)
     source_type = Column(SmallInteger, default=1, comment="1自动拉取 2手动上传")
     local_path = Column(String(500), comment="本地存储路径")
     remote_url = Column(String(500), comment="线上存储URL")

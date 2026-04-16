@@ -1,12 +1,12 @@
-from sqlalchemy import Column, BigInteger, String, Integer, Float, Text, DateTime, ForeignKey, JSON, func
+from sqlalchemy import Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, func
 from app.database import Base
 
 
 class PersonSegment(Base):
     __tablename__ = "museum_person_segment"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    source_video_id = Column(BigInteger, ForeignKey("museum_source_video.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_video_id = Column(Integer, ForeignKey("museum_source_video.id"), nullable=False)
     start_time = Column(Float, nullable=False, comment="开始时间(秒)")
     end_time = Column(Float, nullable=False, comment="结束时间(秒)")
     person_count = Column(Integer, comment="检测到的人数(偏向值)")
@@ -17,8 +17,8 @@ class PersonSegment(Base):
 class VideoSegment(Base):
     __tablename__ = "museum_source_video_segment"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    person_segment_id = Column(BigInteger, ForeignKey("museum_person_segment.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    person_segment_id = Column(Integer, ForeignKey("museum_person_segment.id"), nullable=False)
     segment_index = Column(Integer, nullable=False, comment="片段序号")
     start_time = Column(Float, nullable=False)
     end_time = Column(Float, nullable=False)

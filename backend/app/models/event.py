@@ -1,15 +1,15 @@
-from sqlalchemy import Column, BigInteger, String, Integer, SmallInteger, Text, DateTime, ForeignKey, JSON, func
+from sqlalchemy import Column, Integer, String, SmallInteger, Text, DateTime, ForeignKey, JSON, func
 from app.database import Base
 
 
 class Event(Base):
     __tablename__ = "museum_event"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    source_video_id = Column(BigInteger, ForeignKey("museum_source_video.id"), nullable=False)
-    person_segment_id = Column(BigInteger, ForeignKey("museum_person_segment.id"))
-    camera_id = Column(BigInteger, ForeignKey("museum_camera.id"), nullable=False)
-    room_id = Column(BigInteger, ForeignKey("museum_storage_room.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_video_id = Column(Integer, ForeignKey("museum_source_video.id"), nullable=False)
+    person_segment_id = Column(Integer, ForeignKey("museum_person_segment.id"))
+    camera_id = Column(Integer, ForeignKey("museum_camera.id"), nullable=False)
+    room_id = Column(Integer, ForeignKey("museum_storage_room.id"), nullable=False)
     event_time = Column(DateTime, nullable=False)
     event_type = Column(String(50), comment="事件类型")
     person_count = Column(Integer)
@@ -22,9 +22,9 @@ class Event(Base):
 class EventAggregate(Base):
     __tablename__ = "museum_event_aggregate"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    room_id = Column(BigInteger, ForeignKey("museum_storage_room.id"), nullable=False)
-    camera_id = Column(BigInteger, ForeignKey("museum_camera.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(Integer, ForeignKey("museum_storage_room.id"), nullable=False)
+    camera_id = Column(Integer, ForeignKey("museum_camera.id"), nullable=False)
     session_start = Column(DateTime, nullable=False)
     session_end = Column(DateTime, nullable=False)
     total_events = Column(Integer, default=0)
