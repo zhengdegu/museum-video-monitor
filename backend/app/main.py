@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base
-from app.api import rooms, cameras, videos, events, rules, collections, chat, auth, inventory
+from app.api import rooms, cameras, videos, events, rules, collections, chat, auth, inventory, agent
 
 
 @asynccontextmanager
@@ -74,6 +74,7 @@ app.include_router(rules.router, prefix=API_PREFIX)
 app.include_router(collections.router, prefix=API_PREFIX)
 app.include_router(chat.router, prefix=API_PREFIX)
 app.include_router(inventory.router, prefix=API_PREFIX)
+app.include_router(agent.router, prefix=API_PREFIX)
 
 
 @app.get("/api/v1/health")
