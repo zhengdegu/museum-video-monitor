@@ -1,0 +1,60 @@
+###############################################
+# MediaMTX 配置文件
+# 用于博物馆视频监控平台 RTSP 流中转
+###############################################
+
+# 日志级别: debug, info, warn, error
+logLevel: info
+logDestinations: [stdout]
+
+# API 配置（用于动态管理路径）
+api: yes
+apiAddress: :9997
+
+# RTSP 服务配置
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp, udp]
+rtspRangeType: clock
+
+# RTMP 服务（可选，用于推流兼容）
+rtmp: yes
+rtmpAddress: :1935
+
+# HLS 服务（用于 Web 播放）
+hls: yes
+hlsAddress: :8889
+hlsAlwaysRemux: no
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+
+# WebRTC 服务（用于低延迟 Web 预览）
+webrtc: yes
+webrtcAddress: :8888
+
+# 读写超时
+readTimeout: 10s
+writeTimeout: 10s
+writeQueueSize: 512
+
+# 默认路径配置（所有动态添加的路径继承此配置）
+pathDefaults:
+  # 源协议（从摄像头拉流时使用 TCP）
+  sourceProtocol: tcp
+  # 无人观看时是否保持源连接
+  sourceOnDemand: no
+  # 源超时（秒）
+  sourceOnDemandStartTimeout: 10s
+  sourceOnDemandCloseAfter: 10s
+  # 读取超时
+  readTimeout: 10s
+  # 录制（可选，取消注释启用）
+  # record: yes
+  # recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
+  # recordFormat: fmp4
+  # recordSegmentDuration: 1h
+
+# 路径配置（摄像头路径通过 API 动态添加，此处留空）
+paths:

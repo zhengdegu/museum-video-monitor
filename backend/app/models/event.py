@@ -16,6 +16,9 @@ class Event(Base):
     description = Column(Text, comment="事件描述")
     evidence_frames = Column(JSON, comment="证据截图路径列表")
     ai_conclusion = Column(Text, comment="AI分析结论")
+    feedback_status = Column(String(20), nullable=True, comment="反馈状态: null/confirmed/dismissed")
+    feedback_at = Column(DateTime, nullable=True, comment="反馈时间")
+    feedback_by = Column(String(50), nullable=True, comment="反馈人")
     created_at = Column(DateTime, server_default=func.now())
 
 

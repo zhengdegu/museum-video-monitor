@@ -1,4 +1,4 @@
-"""分析任务队列服务 — 创建/更新/重试"""
+"""分析任务队列服务 — 创建/更新/重试/并发控制"""
 import asyncio
 import logging
 from datetime import datetime
@@ -15,9 +15,21 @@ from app.models.rule import Rule
 logger = logging.getLogger(__name__)
 
 MAX_RETRY = 3
+# 最大并发分析任务数，防止 OOM
+MAX_CONCURRENT_ANALYSES = 3
 
 
 class TaskService:
+
+    def __init__(self):
+        self._semaphore: Optional[asyncio.Semaphore] = None
+
+    @property
+    def semaphore(self) -> asyncio.Semaphore:
+        """延迟初始化 semaphore（必须在事件循环内创建）"""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_ANALYSES)
+        return self._semaphore
 
     async def create_task(self, video_id: int, camera_id: int) -> int:
         async with async_session() as db:
@@ -77,32 +89,40 @@ class TaskService:
             asyncio.create_task(self._execute_task(task.id, task.video_id, task.camera_id))
 
     async def _execute_task(self, task_id: int, video_id: int, camera_id: int):
-        """执行单个分析任务"""
-        try:
-            await self.mark_running(task_id)
+        """执行单个分析任务（受 semaphore 并发控制）
 
-            async with async_session() as db:
-                video = await db.get(SourceVideo, video_id)
-                if not video or not video.local_path:
-                    await self.mark_failed(task_id, "视频记录不存在或无本地路径")
-                    return
+        任务状态完全由本方法管理，video_analyzer.analyze 不再操作任务状态。
+        """
+        async with self.semaphore:
+            try:
+                await self.mark_running(task_id)
 
-                cam = await db.get(Camera, camera_id)
-                room_id = cam.room_id if cam else 0
+                async with async_session() as db:
+                    video = await db.get(SourceVideo, video_id)
+                    if not video or not video.local_path:
+                        await self.mark_failed(task_id, "视频记录不存在或无本地路径")
+                        return
 
-                rules_result = await db.execute(select(Rule).where(Rule.enabled == 1))
-                rules = [
-                    {"name": r.name, "code": r.code, "description": r.description, "enabled": 1}
-                    for r in rules_result.scalars().all()
-                ]
+                    cam = await db.get(Camera, camera_id)
+                    room_id = cam.room_id if cam else 0
 
-            from app.services.video_analyzer import video_analyzer
-            await video_analyzer.analyze(video_id, video.local_path, camera_id, room_id, rules)
-            await self.mark_completed(task_id)
+                    rules_result = await db.execute(select(Rule).where(Rule.enabled == 1))
+                    rules = [
+                        {"name": r.name, "code": r.code, "description": r.description, "enabled": 1}
+                        for r in rules_result.scalars().all()
+                    ]
 
-        except Exception as e:
-            logger.error(f"任务执行失败 task_id={task_id}: {e}")
-            await self.mark_failed(task_id, str(e))
+                from app.services.video_analyzer import video_analyzer
+                result = await video_analyzer.analyze(video_id, video.local_path, camera_id, room_id, rules)
+
+                if result.get("status") == "error":
+                    await self.mark_failed(task_id, result.get("error", "unknown"))
+                else:
+                    await self.mark_completed(task_id)
+
+            except Exception as e:
+                logger.error(f"任务执行失败 task_id={task_id}: {e}")
+                await self.mark_failed(task_id, str(e))
 
 
 # 全局单例

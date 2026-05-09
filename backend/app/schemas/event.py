@@ -32,6 +32,9 @@ class EventOut(BaseModel):
     description: Optional[str] = None
     evidence_frames: Optional[List[str]] = None
     ai_conclusion: Optional[str] = None
+    feedback_status: Optional[str] = None
+    feedback_at: Optional[datetime] = None
+    feedback_by: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

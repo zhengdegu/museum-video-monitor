@@ -19,9 +19,14 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str  # 必须通过环境变量设置
     MYSQL_DATABASE: str = "museum_monitor"
 
-    # ChromaDB
-    CHROMA_PERSIST_DIR: str = "./data/chromadb"
-    CHROMA_COLLECTION: str = "museum_events"
+    # Milvus
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
+    MILVUS_COLLECTION: str = "museum_events"
+
+    # MediaMTX
+    MEDIAMTX_API_URL: str = "http://mediamtx:9997"
+    MEDIAMTX_RTSP_URL: str = "rtsp://mediamtx:8554"
 
     # LLM API（兼容 OpenAI 协议，支持本地 vLLM / 通义千问 / DeepSeek / OpenAI 等）
     VLLM_TEXT_URL: str = "http://localhost:8000/v1"
@@ -62,6 +67,12 @@ class Settings(BaseSettings):
 
     # RTSP
     RTSP_SEGMENT_DURATION: int = 300  # 默认5分钟切片
+
+    # 多馆管控
+    NODE_ROLE: str = "standalone"  # standalone / center / node
+    CENTER_URL: str = ""  # 中心端地址（node 角色时使用）
+    CENTER_API_KEY: str = ""  # 中心端 API Key
+    NODE_NAME: str = "默认节点"  # 本节点名称
 
     # Video Analysis
     SKIP_FRAME_INTERVAL: int = 25

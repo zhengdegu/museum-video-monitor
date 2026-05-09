@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, InputNumber, Select, Space, message, Popconfirm, Tag } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import { getCameras, createCamera, updateCamera, deleteCamera, getRooms } from '../../services/api'
+import LivePreview from '../../components/LivePreview'
 
 export default function CameraList() {
   const [data, setData] = useState<any[]>([])
@@ -11,6 +12,7 @@ export default function CameraList() {
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any>(null)
+  const [previewCamera, setPreviewCamera] = useState<any>(null)
   const [form] = Form.useForm()
 
   const fetchData = async (p = page) => {
@@ -47,6 +49,7 @@ export default function CameraList() {
     {
       title: '操作', render: (_: any, record: any) => (
         <Space>
+          <Button size="small" icon={<VideoCameraOutlined />} onClick={() => setPreviewCamera(record)}>实时预览</Button>
           <Button size="small" onClick={() => { setEditing(record); form.setFieldsValue(record); setModalOpen(true) }}>编辑</Button>
           <Popconfirm title="确认删除？" onConfirm={() => deleteCamera(record.id).then(() => { message.success('已删除'); fetchData() })}><Button size="small" danger>删除</Button></Popconfirm>
         </Space>
@@ -61,6 +64,22 @@ export default function CameraList() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); setModalOpen(true) }}>新增摄像头</Button>
       </div>
       <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ current: page, total, pageSize: 20, onChange: setPage }} />
+      <Modal
+        title={`实时预览 - ${previewCamera?.name || ''}`}
+        open={!!previewCamera}
+        onCancel={() => setPreviewCamera(null)}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        {previewCamera && (
+          <LivePreview
+            cameraId={previewCamera.id}
+            cameraName={previewCamera.name}
+            onClose={() => setPreviewCamera(null)}
+          />
+        )}
+      </Modal>
       <Modal title={editing ? '编辑摄像头' : '新增摄像头'} open={modalOpen} onOk={handleSave} onCancel={() => setModalOpen(false)}>
         <Form form={form} layout="vertical">
           <Form.Item name="room_id" label="所属库房" rules={[{ required: true }]}>

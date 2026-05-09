@@ -69,6 +69,7 @@ YOLO检测结果：
                 messages=messages,
                 max_tokens=2000,
                 temperature=0.1,
+                timeout=120,
             )
             result = response.choices[0].message.content
             logger.info(f"片段分析完成: {len(selected_frames)} 帧")
@@ -99,6 +100,7 @@ YOLO检测结果：
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2000,
                 temperature=0.1,
+                timeout=60,
             )
             return response.choices[0].message.content
 
@@ -143,6 +145,7 @@ YOLO检测结果：
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=2000,
                 temperature=0.1,
+                timeout=60,
             )
 
             text = response.choices[0].message.content.strip()

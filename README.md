@@ -4,7 +4,7 @@
 
 ## 核心能力
 
-- **RTSP 实时拉流** — 自动接入现有摄像头，ffmpeg 按时间窗口切片，无需更换硬件
+- **RTSP 实时拉流** — 通过 MediaMTX 中转现有摄像头 RTSP 流，ffmpeg 按时间窗口切片，无需更换硬件
 - **AI 视频分析管线** — YOLO 粗扫→精扫→合并→切片→多模态 LLM 分析→裁判判定→向量化存储
 - **实时报警推送** — 异常事件秒级推送到飞书/钉钉，risk_level ≥ 2 自动触发
 - **RAG 智能问答** — 基于 Milvus 向量检索 + 大模型，自然语言查询历史事件
@@ -17,7 +17,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | FastAPI / SQLAlchemy / MySQL 8.4 / Milvus / MinIO |
+| 后端 | FastAPI / SQLAlchemy / MySQL 8.4 / Milvus 2.4.4 / MinIO / MediaMTX |
 | AI | YOLO11 / OpenCV / 姿态追踪 / vLLM / RAG |
 | 前端 | React 18 / TypeScript / Ant Design 5 / Vite |
 | 大模型 | 支持本地 vLLM / 通义千问 / DeepSeek / OpenAI（兼容 OpenAI 协议） |

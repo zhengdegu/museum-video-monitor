@@ -224,6 +224,22 @@ CREATE INDEX idx_task_status ON analysis_task(status);
 CREATE INDEX idx_task_video_id ON analysis_task(video_id);
 CREATE INDEX idx_task_video_status ON analysis_task(video_id, status);
 
+-- 合规报告
+CREATE TABLE IF NOT EXISTS museum_report (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    report_type VARCHAR(20) NOT NULL COMMENT '报告类型: weekly/monthly/quarterly',
+    start_date DATE NOT NULL COMMENT '统计开始日期',
+    end_date DATE NOT NULL COMMENT '统计结束日期',
+    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '生成时间',
+    data JSON COMMENT '结构化报告数据',
+    html_path VARCHAR(500) COMMENT 'HTML报告文件路径',
+    status VARCHAR(20) DEFAULT 'generating' COMMENT 'generating/completed/failed',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_report_type ON museum_report(report_type);
+CREATE INDEX idx_report_generated_at ON museum_report(generated_at);
+
 -- 角色
 CREATE TABLE IF NOT EXISTS sys_role (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -256,6 +272,128 @@ INSERT INTO sys_role (name, code, permissions) VALUES
 INSERT INTO sys_user (username, password_hash, real_name, role_id, status) VALUES
 ('admin', '$2b$12$LJ3m4ys3Lk0TSwHjfT0Abu8DfU5wvBfGFGnEqbPx5FqNVGFIVMPWe', '系统管理员', 1, 1);
 
+-- API Key
+CREATE TABLE IF NOT EXISTS sys_api_key (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL COMMENT '关联用户ID',
+    name VARCHAR(100) NOT NULL COMMENT 'Key名称',
+    key_hash VARCHAR(200) NOT NULL COMMENT 'Key的bcrypt哈希',
+    key_prefix VARCHAR(8) NOT NULL COMMENT 'Key前8位明文用于展示',
+    status TINYINT DEFAULT 1 COMMENT '1启用 0禁用',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME NULL COMMENT '最后使用时间',
+    FOREIGN KEY (user_id) REFERENCES sys_user(id)
+);
+
+CREATE INDEX idx_api_key_user_id ON sys_api_key(user_id);
+CREATE INDEX idx_api_key_prefix ON sys_api_key(key_prefix);
+
+-- Webhook 订阅
+CREATE TABLE IF NOT EXISTS sys_webhook (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL COMMENT '关联用户ID',
+    url VARCHAR(500) NOT NULL COMMENT 'Webhook回调URL',
+    secret VARCHAR(200) NOT NULL COMMENT '签名密钥',
+    event_types JSON COMMENT '订阅事件类型列表',
+    status TINYINT DEFAULT 1 COMMENT '1启用 0禁用',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES sys_user(id)
+);
+
+CREATE INDEX idx_webhook_user_id ON sys_webhook(user_id);
+
+-- Webhook 投递日志
+CREATE TABLE IF NOT EXISTS sys_webhook_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    webhook_id BIGINT NOT NULL,
+    event_type VARCHAR(50) COMMENT '事件类型',
+    payload JSON COMMENT '投递内容',
+    response_code INT NULL COMMENT '响应状态码',
+    attempts INT DEFAULT 0 COMMENT '尝试次数',
+    status VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/success/failed',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (webhook_id) REFERENCES sys_webhook(id)
+);
+
+CREATE INDEX idx_webhook_log_webhook_id ON sys_webhook_log(webhook_id);
+CREATE INDEX idx_webhook_log_created_at ON sys_webhook_log(created_at);
+
+-- ========== 预警系统相关表 ==========
+
+-- 预警记录
+CREATE TABLE IF NOT EXISTS museum_warning (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    camera_id BIGINT NOT NULL COMMENT '摄像头ID',
+    room_id BIGINT NOT NULL COMMENT '库房ID',
+    warning_type VARCHAR(50) NOT NULL COMMENT '预警类型: loiter/repeated_approach/acceleration/off_hours',
+    risk_score INT DEFAULT 0 COMMENT '风险分数 0-100',
+    person_track_id VARCHAR(100) COMMENT '人物轨迹追踪ID',
+    trajectory_data JSON COMMENT '轨迹数据',
+    description TEXT COMMENT '预警描述',
+    status VARCHAR(20) DEFAULT 'active' COMMENT '状态: active/resolved/dismissed',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME NULL,
+    FOREIGN KEY (camera_id) REFERENCES museum_camera(id),
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
+CREATE INDEX idx_warning_camera_id ON museum_warning(camera_id);
+CREATE INDEX idx_warning_room_id ON museum_warning(room_id);
+CREATE INDEX idx_warning_type ON museum_warning(warning_type);
+CREATE INDEX idx_warning_status ON museum_warning(status);
+CREATE INDEX idx_warning_created_at ON museum_warning(created_at);
+CREATE INDEX idx_warning_risk_score ON museum_warning(risk_score);
+
+-- 预警规则配置
+CREATE TABLE IF NOT EXISTS museum_warning_rule (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    rule_type VARCHAR(50) NOT NULL COMMENT '规则类型: loiter/repeated_approach/acceleration/off_hours',
+    name VARCHAR(100) NOT NULL COMMENT '规则名称',
+    config JSON COMMENT '规则配置',
+    enabled TINYINT DEFAULT 1 COMMENT '1启用 0禁用',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 预置预警规则
+INSERT INTO museum_warning_rule (rule_type, name, config, enabled) VALUES
+('loiter', '藏品区域滞留预警', '{"threshold_seconds": 180, "risk_score": 60}', 1),
+('repeated_approach', '反复接近同一位置预警', '{"min_count": 3, "radius": 50, "risk_score": 70}', 1),
+('acceleration', '移动速度突增预警', '{"speed_increase_pct": 200, "risk_score": 50}', 1),
+('off_hours', '非工作时间出现预警', '{"start_hour": 22, "end_hour": 6, "risk_score": 80}', 1);
+
+-- ========== 推送渠道相关表 ==========
+
+-- 推送渠道配置
+CREATE TABLE IF NOT EXISTS sys_push_channel (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    channel_type VARCHAR(20) NOT NULL COMMENT '渠道类型: feishu/dingtalk/email/serverchan',
+    name VARCHAR(100) NOT NULL COMMENT '渠道名称',
+    config JSON COMMENT '渠道配置(JSON)',
+    enabled TINYINT DEFAULT 1 COMMENT '1启用 0禁用',
+    min_risk_level TINYINT DEFAULT 0 COMMENT '最低推送风险等级 0-3',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 推送日志
+CREATE TABLE IF NOT EXISTS sys_push_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    channel_id BIGINT NOT NULL COMMENT '渠道ID',
+    event_id BIGINT COMMENT '关联事件ID',
+    status VARCHAR(20) NOT NULL COMMENT 'success/failed',
+    response TEXT COMMENT '推送响应内容',
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (channel_id) REFERENCES sys_push_channel(id)
+);
+
+CREATE INDEX idx_push_log_channel ON sys_push_log(channel_id);
+CREATE INDEX idx_push_log_event ON sys_push_log(event_id);
+CREATE INDEX idx_push_log_sent_at ON sys_push_log(sent_at);
+
+-- museum_event 表新增反馈字段
+ALTER TABLE museum_event ADD COLUMN feedback_status VARCHAR(20) DEFAULT NULL COMMENT '反馈状态: null/confirmed/dismissed';
+ALTER TABLE museum_event ADD COLUMN feedback_at DATETIME DEFAULT NULL COMMENT '反馈时间';
+ALTER TABLE museum_event ADD COLUMN feedback_by VARCHAR(50) DEFAULT NULL COMMENT '反馈人';
+
 -- 预置6条核心安防规则
 INSERT INTO museum_rule (name, code, description, rule_type, rule_config, enabled) VALUES
 ('进出库房人数限制', 'person_count_min_2', '进出库房的人数必须大于等于两人', 'person_count', '{"min_count": 2}', 1),
@@ -264,3 +402,95 @@ INSERT INTO museum_rule (name, code, description, rule_type, rule_config, enable
 ('禁止危险行为', 'no_running', '禁止奔跑躲藏视角', 'behavior', '{"forbid_running": true, "forbid_jumping": true, "forbid_hiding": true}', 1),
 ('仅保留有人画面', 'person_frames_only', '只保留有人进出的画面，其余画面全部去掉', 'filter', '{"keep_person_only": true}', 1),
 ('自然语言事件检索', 'nlp_search', '支持自然语言沟通交流精准检索具体时间的具体事件', 'nlp', '{"enabled": true}', 1);
+
+-- ========== AI 自动盘点相关表 ==========
+
+-- AI 盘点任务
+CREATE TABLE IF NOT EXISTS museum_ai_inventory_task (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    room_id BIGINT NOT NULL COMMENT '库房ID',
+    trigger_type VARCHAR(20) NOT NULL COMMENT '触发类型: manual/scheduled',
+    status VARCHAR(20) DEFAULT 'pending' COMMENT '状态: pending/running/completed/failed',
+    started_at DATETIME NULL COMMENT '开始时间',
+    completed_at DATETIME NULL COMMENT '完成时间',
+    total_items INT DEFAULT 0 COMMENT '总藏品数',
+    matched_items INT DEFAULT 0 COMMENT '在位数',
+    missing_items INT DEFAULT 0 COMMENT '缺失数',
+    uncertain_items INT DEFAULT 0 COMMENT '不确定数',
+    error_message TEXT NULL COMMENT '错误信息',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
+CREATE INDEX idx_ai_inv_task_room ON museum_ai_inventory_task(room_id);
+CREATE INDEX idx_ai_inv_task_status ON museum_ai_inventory_task(status);
+CREATE INDEX idx_ai_inv_task_created ON museum_ai_inventory_task(created_at);
+
+-- AI 盘点结果（每件藏品）
+CREATE TABLE IF NOT EXISTS museum_ai_inventory_result (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id BIGINT NOT NULL COMMENT '任务ID',
+    collection_id BIGINT NOT NULL COMMENT '藏品ID',
+    status VARCHAR(20) NOT NULL COMMENT '状态: present/missing/displaced/uncertain',
+    confidence FLOAT DEFAULT 0.0 COMMENT '置信度 0-1',
+    description TEXT NULL COMMENT '说明',
+    frame_path VARCHAR(500) NULL COMMENT '截图路径',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES museum_ai_inventory_task(id),
+    FOREIGN KEY (collection_id) REFERENCES museum_collection(id)
+);
+
+CREATE INDEX idx_ai_inv_result_task ON museum_ai_inventory_result(task_id);
+CREATE INDEX idx_ai_inv_result_collection ON museum_ai_inventory_result(collection_id);
+CREATE INDEX idx_ai_inv_result_status ON museum_ai_inventory_result(status);
+
+-- AI 盘点定时配置
+CREATE TABLE IF NOT EXISTS museum_ai_inventory_schedule (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    room_id BIGINT NOT NULL COMMENT '库房ID',
+    interval_hours INT DEFAULT 24 COMMENT '盘点间隔(小时)',
+    enabled TINYINT DEFAULT 1 COMMENT '1启用 0禁用',
+    last_run_at DATETIME NULL COMMENT '上次执行时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
+CREATE INDEX idx_ai_inv_schedule_room ON museum_ai_inventory_schedule(room_id);
+
+-- ========== 库房布局（数字孪生）==========
+
+-- 库房布局
+CREATE TABLE IF NOT EXISTS museum_room_layout (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    room_id BIGINT NOT NULL COMMENT '库房ID',
+    width INT NOT NULL COMMENT '库房宽度(cm)',
+    height INT NOT NULL COMMENT '库房高度(cm)',
+    background_image VARCHAR(500) COMMENT '背景图片路径',
+    layout_data JSON COMMENT '布局数据JSON',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_room_id (room_id),
+    FOREIGN KEY (room_id) REFERENCES museum_storage_room(id)
+);
+
+CREATE INDEX idx_room_layout_room_id ON museum_room_layout(room_id);
+
+-- ========== 多馆管控相关表 ==========
+
+-- 节点注册
+CREATE TABLE IF NOT EXISTS sys_node (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL COMMENT '节点名称',
+    location VARCHAR(200) COMMENT '节点位置',
+    node_url VARCHAR(500) COMMENT '节点访问地址',
+    api_key VARCHAR(200) NOT NULL COMMENT '节点通信API Key',
+    status VARCHAR(20) DEFAULT 'offline' COMMENT '状态: online/offline/warning',
+    version VARCHAR(50) COMMENT '节点版本',
+    last_heartbeat_at DATETIME NULL COMMENT '最后心跳时间',
+    system_info JSON COMMENT '系统信息',
+    stats JSON COMMENT '运行统计',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_node_status ON sys_node(status);
+CREATE INDEX idx_node_api_key ON sys_node(api_key);

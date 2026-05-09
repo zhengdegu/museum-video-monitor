@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+        .header { text-align: center; margin-bottom: 40px; padding: 30px; background: linear-gradient(135deg, #1a237e, #283593); color: white; border-radius: 12px; }
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header .meta { font-size: 14px; opacity: 0.85; }
+        .section { background: white; border-radius: 10px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .section h2 { font-size: 18px; color: #1a237e; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e8eaf6; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .stat-card { background: #f8f9ff; border-radius: 8px; padding: 20px; text-align: center; border: 1px solid #e8eaf6; }
+        .stat-card .value { font-size: 32px; font-weight: bold; color: #1a237e; }
+        .stat-card .label { font-size: 13px; color: #666; margin-top: 4px; }
+        .stat-card.danger .value { color: #d32f2f; }
+        .stat-card.success .value { color: #2e7d32; }
+        .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 160px; padding: 10px 0; border-bottom: 1px solid #e0e0e0; }
+        .bar-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+        .bar { background: linear-gradient(180deg, #3f51b5, #7986cb); border-radius: 3px 3px 0 0; min-width: 12px; max-width: 30px; width: 100%; }
+        .bar-label { font-size: 10px; color: #999; margin-top: 4px; }
+        .bar-value { font-size: 10px; color: #666; margin-bottom: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #f8f9ff; font-weight: 600; color: #444; font-size: 13px; }
+        td { font-size: 13px; }
+        .risk-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .risk-0 { background: #e8f5e9; color: #2e7d32; }
+        .risk-1 { background: #e3f2fd; color: #1565c0; }
+        .risk-2 { background: #fff3e0; color: #e65100; }
+        .risk-3 { background: #fbe9e7; color: #c62828; }
+        .conclusion { background: #f1f8e9; border-left: 4px solid #4caf50; padding: 16px 20px; border-radius: 0 8px 8px 0; margin-top: 16px; }
+        .conclusion h3 { color: #2e7d32; margin-bottom: 8px; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>{{ title }}</h1>
+        <div class="meta">
+            统计周期：{{ start_date }} 至 {{ end_date }} | 生成时间：{{ generated_at }}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>统计概览</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="value">{{ total_events }}</div>
+                <div class="label">事件总数</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="value">{{ violation_events }}</div>
+                <div class="label">违规事件数</div>
+            </div>
+            <div class="stat-card success">
+                <div class="value">{{ compliance_rate }}%</div>
+                <div class="label">合规率</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ camera_online_rate }}%</div>
+                <div class="label">摄像头在线率 ({{ online_cameras }}/{{ total_cameras }})</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>事件趋势</h2>
+        <div class="bar-chart">
+            {% for item in daily_trend %}
+            <div class="bar-item">
+                <div class="bar-value">{{ item.count }}</div>
+                <div class="bar" style="height: {% if daily_trend|map(attribute='count')|max > 0 %}{{ (item.count / (daily_trend|map(attribute='count')|max)) * 100 }}%{% else %}0%{% endif %};"></div>
+                <div class="bar-label">{{ item.date[5:] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if rule_hit_stats %}
+    <div class="section">
+        <h2>规则命中排行</h2>
+        <table>
+            <thead>
+                <tr><th>排名</th><th>规则名称</th><th>规则编码</th><th>命中次数</th></tr>
+            </thead>
+            <tbody>
+                {% for rule in rule_hit_stats %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ rule.name }}</td>
+                    <td>{{ rule.code }}</td>
+                    <td><strong>{{ rule.hit_count }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <h2>库房风险分布</h2>
+        <div class="stats-grid" style="margin-bottom: 16px;">
+            <div class="stat-card">
+                <div class="value">{{ risk_summary.normal }}</div>
+                <div class="label">正常</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ risk_summary.low }}</div>
+                <div class="label">低风险</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ risk_summary.medium }}</div>
+                <div class="label">中风险</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="value">{{ risk_summary.high }}</div>
+                <div class="label">高风险</div>
+            </div>
+        </div>
+        {% if room_risk_distribution %}
+        <table>
+            <thead>
+                <tr><th>库房</th><th>最高风险等级</th><th>聚合事件数</th></tr>
+            </thead>
+            <tbody>
+                {% for room in room_risk_distribution %}
+                <tr>
+                    <td>{{ room.room_name }}</td>
+                    <td><span class="risk-badge risk-{{ room.max_risk }}">
+                        {% if room.max_risk == 0 %}正常{% elif room.max_risk == 1 %}低风险{% elif room.max_risk == 2 %}中风险{% else %}高风险{% endif %}
+                    </span></td>
+                    <td>{{ room.aggregate_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>结论与建议</h2>
+        <div class="conclusion">
+            <h3>本期总结</h3>
+            <p>本{{ report_type_label }}期间共发生 <strong>{{ total_events }}</strong> 起事件，
+            其中违规事件 <strong>{{ violation_events }}</strong> 起，
+            合规率为 <strong>{{ compliance_rate }}%</strong>。
+            摄像头在线率为 <strong>{{ camera_online_rate }}%</strong>。</p>
+            {% if violation_events > 0 %}
+            <p style="margin-top: 8px;">建议重点关注违规事件较多的库房，加强人员培训和规范操作流程。</p>
+            {% else %}
+            <p style="margin-top: 8px;">本期无违规事件，安防状况良好，请继续保持。</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>本报告由博物馆视频智能监控分析平台自动生成</p>
+    </div>
+</div>
+</body>
+</html>

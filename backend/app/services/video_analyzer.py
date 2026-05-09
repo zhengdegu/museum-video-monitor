@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
@@ -16,6 +17,7 @@ from app.services.rule_engine import rule_engine
 from app.services.vector_service import vector_service
 from app.services.storage_service import storage_service
 from app.services.alert_service import alert_service
+from app.services.trajectory_service import trajectory_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +26,14 @@ class VideoAnalyzer:
     """视频分析全流程调度"""
 
     async def analyze(self, video_id: int, local_path: str, camera_id: int, room_id: int, rules: List[Dict], task_id: Optional[int] = None):
-        """分析一个视频的完整流程"""
-        from app.services.task_service import task_service
+        """分析一个视频的完整流程
 
+        注意：任务状态由 task_service 统一管理，本方法不再操作任务状态。
+        """
         logger.info(f"[视频分析] 开始: video_id={video_id}, path={local_path}")
 
-        # 更新任务状态为 running
-        if task_id:
-            await task_service.mark_running(task_id)
+        # 记录本次分析产生的帧图目录，用于最终清理
+        frame_dirs: List[str] = []
 
         try:
             # Step1-3: 人物检测与区间合并
@@ -45,7 +47,7 @@ class VideoAnalyzer:
 
                 event = await self._step_analyze_segment(
                     video_id, local_path, camera_id, room_id, rules,
-                    seg_idx, seg_start, seg_end,
+                    seg_idx, seg_start, seg_end, frame_dirs,
                 )
                 if event:
                     all_events.append(event)
@@ -67,15 +69,15 @@ class VideoAnalyzer:
                 logger.error(f"[视频推送] 创建推送任务失败: video_id={video_id}, error={e}")
 
             logger.info(f"[视频分析] 完成: video_id={video_id}, 事件数={len(all_events)}")
-            if task_id:
-                await task_service.mark_completed(task_id)
             return {"events": all_events, "status": "completed"}
 
         except Exception as e:
             logger.error(f"[视频分析] 失败: video_id={video_id}, error={e}")
-            if task_id:
-                await task_service.mark_failed(task_id, str(e))
             return {"events": [], "status": "error", "error": str(e)}
+
+        finally:
+            # 清理本次分析产生的所有帧图目录
+            self._cleanup_frame_dirs(video_id, frame_dirs)
 
     # ── Step 1-3: 人物检测 ──────────────────────────────────
 
@@ -100,6 +102,7 @@ class VideoAnalyzer:
     async def _step_analyze_segment(
         self, video_id: int, local_path: str, camera_id: int, room_id: int,
         rules: List[Dict], seg_idx: int, seg_start: float, seg_end: float,
+        frame_dirs: List[str],
     ) -> Optional[Dict]:
         """分析单个人物片段：切分子段 → 逐段分析 → 裁判判定 → 写库 → 向量化"""
         from app.database import async_session
@@ -123,7 +126,7 @@ class VideoAnalyzer:
         # Step4-6: 逐子段分析
         for sub_idx, (sub_start, sub_end) in enumerate(sub_segments):
             result = await self._step_analyze_sub_segment(
-                video_id, local_path, seg_idx, sub_idx, sub_start, sub_end, person_segment_id,
+                video_id, local_path, seg_idx, sub_idx, sub_start, sub_end, person_segment_id, frame_dirs, camera_id,
             )
             if result:
                 person_count = result["person_count"]
@@ -159,7 +162,14 @@ class VideoAnalyzer:
         # 写入 event + rule_hit 记录
         await self._step_persist_event(event, video_id, person_segment_id, camera_id, room_id, person_count, merged_conclusion, judge_result)
 
-        # Step8: 向量化写入 ChromaDB
+        # 轨迹预警检查
+        try:
+            current_hour = datetime.now().hour
+            await self._step_trajectory_check(camera_id, room_id, current_hour)
+        except Exception as e:
+            logger.error(f"[轨迹预警] 检查失败: {e}")
+
+        # Step8: 向量化写入 Milvus
         await self._step_vectorize(room_id, camera_id, merged_conclusion)
 
         return event
@@ -167,12 +177,14 @@ class VideoAnalyzer:
     async def _step_analyze_sub_segment(
         self, video_id: int, local_path: str, seg_idx: int, sub_idx: int,
         sub_start: float, sub_end: float, person_segment_id: int,
+        frame_dirs: List[str], camera_id: int = 0,
     ) -> Optional[Dict]:
         """分析单个 60s 子段：抽帧 → YOLO → 姿态 → LLM → 合并结论"""
         from app.database import async_session
         from app.models.segment import VideoSegment
 
         frame_dir = os.path.join(settings.LOCAL_FRAME_PATH, str(video_id), f"seg{seg_idx}_sub{sub_idx}")
+        frame_dirs.append(frame_dir)  # 记录帧图目录，供后续清理
         frame_paths = await asyncio.to_thread(self._extract_frames, local_path, sub_start, sub_end, frame_dir)
         if not frame_paths:
             return None
@@ -181,6 +193,9 @@ class VideoAnalyzer:
         person_counts, yolo_boxes = await asyncio.to_thread(self._detect_frames_sync, frame_paths)
         person_count = await asyncio.to_thread(yolo_detector.get_person_count_biased, person_counts)
         yolo_results = {"person_count": person_count, "boxes": yolo_boxes[:10]}
+
+        # 轨迹分析：将 YOLO 检测框送入轨迹服务
+        await self._step_trajectory_update(camera_id, yolo_boxes, sub_start, sub_end)
 
         # 姿态分析
         pose_results = await self._step_pose_analysis(frame_paths, local_path, sub_start, sub_end)
@@ -221,6 +236,67 @@ class VideoAnalyzer:
         running = await asyncio.to_thread(pose_tracker.detect_running, local_path, sub_start, sub_end)
         pose_results["running_detected"] = running
         return pose_results
+
+    # ── 轨迹分析 ──────────────────────────────────────────
+
+    async def _step_trajectory_update(self, camera_id: int, yolo_boxes: List[Dict], sub_start: float, sub_end: float):
+        """将 YOLO 检测框更新到轨迹服务（纯内存操作）"""
+        # 将 boxes 转换为带 track_id 的检测列表
+        # yolo_boxes 格式: [{"box": [x1,y1,x2,y2], "track_id": "...", ...}]
+        mid_time = (sub_start + sub_end) / 2.0
+        detections = []
+        for i, box_data in enumerate(yolo_boxes):
+            if isinstance(box_data, dict):
+                detections.append(box_data)
+            elif isinstance(box_data, (list, tuple)) and len(box_data) >= 4:
+                detections.append({"box": box_data, "track_id": f"person_{i}"})
+        if detections:
+            trajectory_service.update_tracks(camera_id, detections, mid_time)
+
+    async def _step_trajectory_check(
+        self, camera_id: int, room_id: int, current_hour: int,
+    ) -> List[Dict]:
+        """执行轨迹预警检查并写入数据库"""
+        from app.database import async_session
+        from app.models.warning import Warning as WarningModel, WarningRule
+        from sqlalchemy import select as sa_select
+
+        # 加载预警规则
+        async with async_session() as db:
+            result = await db.execute(sa_select(WarningRule).where(WarningRule.enabled == 1))
+            rules = result.scalars().all()
+            rule_dicts = [{"rule_type": r.rule_type, "config": r.config, "enabled": r.enabled} for r in rules]
+
+        # 分析轨迹
+        warnings = trajectory_service.analyze_tracks(camera_id, room_id, rule_dicts)
+
+        # 检查非工作时间
+        off_hours_warning = trajectory_service.check_off_hours(camera_id, room_id, current_hour, rule_dicts)
+        if off_hours_warning:
+            warnings.append(off_hours_warning)
+
+        # 写入数据库
+        if warnings:
+            async with async_session() as db:
+                for w in warnings:
+                    db_warning = WarningModel(
+                        camera_id=w["camera_id"],
+                        room_id=w["room_id"],
+                        warning_type=w["warning_type"],
+                        risk_score=w["risk_score"],
+                        person_track_id=w.get("person_track_id"),
+                        trajectory_data=w.get("trajectory_data"),
+                        description=w.get("description", ""),
+                        status="active",
+                    )
+                    db.add(db_warning)
+                await db.commit()
+            logger.info(f"[轨迹预警] camera_id={camera_id}, 新增 {len(warnings)} 条预警")
+
+        # 清理过期轨迹
+        trajectory_service.clear_stale_tracks(camera_id)
+
+        return warnings
 
     # ── Step 7: 裁判判定 ───────────────────────────────────
 
@@ -337,7 +413,7 @@ class VideoAnalyzer:
     # ── Step 8: 向量化 ────────────────────────────────────
 
     async def _step_vectorize(self, room_id: int, camera_id: int, merged_conclusion: str):
-        """向量化写入 ChromaDB"""
+        """向量化写入 Milvus"""
         try:
             from app.services.rag_service import rag_service
             embedding = await rag_service._embed(merged_conclusion)
@@ -352,9 +428,32 @@ class VideoAnalyzer:
                 description=merged_conclusion[:4000],
                 embedding=embedding,
             )
-            logger.info("  [Step8] 已写入 ChromaDB")
+            logger.info("  [Step8] 已写入 Milvus")
         except Exception as e:
-            logger.error(f"  [Step8] ChromaDB 写入失败: {e}")
+            logger.error(f"  [Step8] Milvus 写入失败: {e}")
+
+
+    # ── 帧图清理 ──────────────────────────────────────────
+
+    def _cleanup_frame_dirs(self, video_id: int, frame_dirs: List[str]):
+        """清理分析过程中产生的帧图目录"""
+        for d in frame_dirs:
+            try:
+                if os.path.isdir(d):
+                    shutil.rmtree(d)
+            except Exception as e:
+                logger.warning(f"清理帧图目录失败: {d}, error={e}")
+
+        # 尝试清理 video_id 级别的父目录（如果为空）
+        video_frame_dir = os.path.join(settings.LOCAL_FRAME_PATH, str(video_id))
+        try:
+            if os.path.isdir(video_frame_dir) and not os.listdir(video_frame_dir):
+                os.rmdir(video_frame_dir)
+        except Exception:
+            pass
+
+        if frame_dirs:
+            logger.info(f"[帧图清理] video_id={video_id}, 已清理 {len(frame_dirs)} 个帧图目录")
 
     # ── 工具方法 ───────────────────────────────────────────
 

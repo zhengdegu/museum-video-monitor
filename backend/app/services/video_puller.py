@@ -1,11 +1,11 @@
-"""RTSP 视频拉流服务 — ffmpeg 切片 + 自动触发分析"""
+"""RTSP 视频拉流服务 — 通过 MediaMTX 中转 + ffmpeg 切片 + 自动触发分析"""
 import asyncio
 import logging
 import os
-import subprocess
-import time
 from datetime import datetime
 from typing import Optional
+
+import httpx
 
 from app.config import settings
 
@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class VideoPuller:
-    """使用 ffmpeg 从 RTSP 流按时间窗口切片，支持多路摄像头"""
+    """通过 MediaMTX 中转 RTSP 流，使用 ffmpeg 按时间窗口切片，支持多路摄像头"""
 
     def __init__(self):
         self._tasks: dict[int, asyncio.Task] = {}
         self._processes: dict[int, asyncio.subprocess.Process] = {}
 
     async def start_all_cameras(self):
-        """从数据库读取所有在线摄像头，启动拉流"""
+        """从数据库读取所有在线摄像头，注册到 MediaMTX 并启动拉流"""
         from app.database import async_session
         from app.models.camera import Camera
         from sqlalchemy import select
@@ -34,6 +34,7 @@ class VideoPuller:
             return
 
         for cam in cameras:
+            await self._register_source(cam.id, cam.rtsp_url)
             await self.start_pull(cam.id, cam.rtsp_url)
         logger.info(f"已启动 {len(cameras)} 路摄像头拉流")
 
@@ -46,16 +47,70 @@ class VideoPuller:
             logger.warning(f"摄像头 {camera_id} 已在拉流中")
             return
 
-        task = asyncio.create_task(self._pull_loop(camera_id, rtsp_url, segment_duration, save_dir))
-        self._tasks[camera_id] = task
-        logger.info(f"开始拉流: camera_id={camera_id}, rtsp={rtsp_url}, segment={segment_duration}s")
+        # 注册源到 MediaMTX
+        await self._register_source(camera_id, rtsp_url)
 
-    async def _pull_loop(self, camera_id: int, rtsp_url: str, segment_duration: int, save_dir: str):
+        # 从 MediaMTX 中转地址拉流
+        mediamtx_url = self._get_mediamtx_url(camera_id)
+        task = asyncio.create_task(self._pull_loop(camera_id, mediamtx_url, segment_duration, save_dir))
+        self._tasks[camera_id] = task
+        logger.info(f"开始拉流: camera_id={camera_id}, mediamtx={mediamtx_url}, segment={segment_duration}s")
+
+    def _get_mediamtx_url(self, camera_id: int) -> str:
+        """获取 MediaMTX 中转后的 RTSP 地址"""
+        path_name = f"cam{camera_id}"
+        return f"{settings.MEDIAMTX_RTSP_URL}/{path_name}"
+
+    async def _register_source(self, camera_id: int, rtsp_url: str):
+        """向 MediaMTX API 注册摄像头源路径"""
+        path_name = f"cam{camera_id}"
+        api_url = f"{settings.MEDIAMTX_API_URL}/v3/config/paths/add/{path_name}"
+
+        payload = {
+            "source": rtsp_url,
+            "sourceProtocol": "tcp",
+            "sourceOnDemand": False,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(api_url, json=payload)
+                if response.status_code == 200:
+                    logger.info(f"MediaMTX 注册成功: {path_name} -> {rtsp_url}")
+                elif response.status_code == 409:
+                    # 路径已存在，尝试更新
+                    patch_url = f"{settings.MEDIAMTX_API_URL}/v3/config/paths/patch/{path_name}"
+                    resp2 = await client.patch(patch_url, json=payload)
+                    if resp2.status_code == 200:
+                        logger.info(f"MediaMTX 更新成功: {path_name} -> {rtsp_url}")
+                    else:
+                        logger.warning(f"MediaMTX 更新失败: {path_name}, status={resp2.status_code}")
+                else:
+                    logger.warning(f"MediaMTX 注册失败: {path_name}, status={response.status_code}, body={response.text}")
+        except Exception as e:
+            logger.error(f"MediaMTX API 调用失败: {e}")
+
+    async def _unregister_source(self, camera_id: int):
+        """从 MediaMTX 移除摄像头路径"""
+        path_name = f"cam{camera_id}"
+        api_url = f"{settings.MEDIAMTX_API_URL}/v3/config/paths/delete/{path_name}"
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.delete(api_url)
+                if response.status_code == 200:
+                    logger.info(f"MediaMTX 注销成功: {path_name}")
+                else:
+                    logger.warning(f"MediaMTX 注销失败: {path_name}, status={response.status_code}")
+        except Exception as e:
+            logger.error(f"MediaMTX API 注销失败: {e}")
+
+    async def _pull_loop(self, camera_id: int, mediamtx_url: str, segment_duration: int, save_dir: str):
         """持续拉流循环，每个切片完成后触发分析"""
         consecutive_failures = 0
         while True:
             try:
-                filepath = await self._pull_one_segment(camera_id, rtsp_url, segment_duration, save_dir)
+                filepath = await self._pull_one_segment(camera_id, mediamtx_url, segment_duration, save_dir)
                 if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                     await self._trigger_analysis(camera_id, filepath, segment_duration)
                     consecutive_failures = 0
@@ -68,8 +123,8 @@ class VideoPuller:
                 logger.error(f"拉流异常 camera_id={camera_id}, 连续失败{consecutive_failures}次, {backoff}s后重试: {e}")
                 await asyncio.sleep(backoff)
 
-    async def _pull_one_segment(self, camera_id: int, rtsp_url: str, segment_duration: int, save_dir: str) -> Optional[str]:
-        """使用 ffmpeg 拉取一个时间窗口的 RTSP 流"""
+    async def _pull_one_segment(self, camera_id: int, mediamtx_url: str, segment_duration: int, save_dir: str) -> Optional[str]:
+        """使用 ffmpeg 从 MediaMTX 中转地址拉取一个时间窗口的流"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"cam{camera_id}_{timestamp}.mp4"
         filepath = os.path.join(save_dir, filename)
@@ -77,7 +132,7 @@ class VideoPuller:
         cmd = [
             "ffmpeg", "-y",
             "-rtsp_transport", "tcp",
-            "-i", rtsp_url,
+            "-i", mediamtx_url,
             "-t", str(segment_duration),
             "-c", "copy",
             "-movflags", "+faststart",
@@ -159,6 +214,9 @@ class VideoPuller:
                 await task
             except asyncio.CancelledError:
                 pass
+
+        # 从 MediaMTX 注销
+        await self._unregister_source(camera_id)
         logger.info(f"停止拉流: camera_id={camera_id}")
 
     async def stop_all(self):

@@ -117,7 +117,7 @@ export default function Login() {
               <Input
                 prefix={<UserOutlined style={{ color: wanderMapColors.textSecondary }} />}
                 placeholder="请输入用户名"
-                style={{ borderRadius: 10, height: 48 }}
+                style={{ borderRadius: 6, height: 48 }}
               />
             </Form.Item>
             <Form.Item
@@ -128,7 +128,7 @@ export default function Login() {
               <Input.Password
                 prefix={<LockOutlined style={{ color: wanderMapColors.textSecondary }} />}
                 placeholder="请输入密码"
-                style={{ borderRadius: 10, height: 48 }}
+                style={{ borderRadius: 6, height: 48 }}
               />
             </Form.Item>
             <Form.Item style={{ marginTop: 32 }}>
@@ -139,11 +139,11 @@ export default function Login() {
                 block
                 style={{
                   height: 48,
-                  borderRadius: 10,
+                  borderRadius: 6,
                   fontSize: 16,
                   fontWeight: 600,
-                  background: wanderMapColors.secondary,
-                  borderColor: wanderMapColors.secondary,
+                  background: wanderMapColors.primary,
+                  borderColor: wanderMapColors.primary,
                 }}
               >
                 登录

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class RAGService:
-    """基于 ChromaDB + bge + Qwen3 的 RAG 检索链路"""
+    """基于 Milvus + bge + Qwen3 的 RAG 检索链路"""
 
     def __init__(self):
         embed_url = settings.EMBEDDING_URL or settings.VLLM_TEXT_URL
@@ -29,7 +29,7 @@ class RAGService:
             # 1. 向量化 query
             query_embedding = await self._embed(message)
 
-            # 2. ChromaDB Top-K 召回
+            # 2. Milvus Top-K 召回
             hits = await asyncio.to_thread(vector_service.search, query_embedding, 20)
             if not hits:
                 return {
@@ -80,7 +80,7 @@ class RAGService:
         except Exception as e:
             logger.error(f"RAG 查询失败: {e}")
             return {
-                "answer": f"查询出错: {str(e)}。请确保 ChromaDB 和 vLLM 服务已启动。",
+                "answer": f"查询出错: {str(e)}。请确保 Milvus 和 vLLM 服务已启动。",
                 "sources": [],
                 "session_id": session_id,
             }

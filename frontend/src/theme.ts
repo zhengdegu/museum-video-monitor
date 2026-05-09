@@ -1,60 +1,91 @@
 import type { ThemeConfig } from 'antd'
 
-// WanderMap Design System Colors
-export const wanderMapColors = {
-  primary: '#0F766E',
-  secondary: '#F97316',
-  tertiary: '#0EA5E9',
-  background: '#FFFFFF',
+// Genesis Design System Colors
+export const genesisColors = {
+  primary: '#6366F1',
+  primaryHover: '#4F46E5',
+  secondary: '#20970B',
+  neutral: '#9C9C9C',
+  background: '#FAFAFA',
   surface: '#FFFFFF',
-  success: '#059669',
-  warning: '#D97706',
+  textPrimary: '#0A0A0A',
+  textSecondary: '#6B6B6B',
+  border: '#E8E8EC',
+  success: '#10B981',
+  warning: '#F59E0B',
   error: '#EF4444',
-  info: '#0EA5E9',
-  textPrimary: '#1A2332',
-  textSecondary: '#64748B',
-  siderBg: '#0F766E',
-  siderDarkBg: '#0A5C56',
 }
+
+// Keep backward-compatible alias
+export const wanderMapColors = genesisColors
 
 const theme: ThemeConfig = {
   token: {
-    colorPrimary: wanderMapColors.primary,
-    colorSuccess: wanderMapColors.success,
-    colorWarning: wanderMapColors.warning,
-    colorError: wanderMapColors.error,
-    colorInfo: wanderMapColors.info,
-    colorLink: wanderMapColors.tertiary,
-    colorBgLayout: wanderMapColors.background,
-    colorBgContainer: wanderMapColors.surface,
-    borderRadius: 12,
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    colorPrimary: genesisColors.primary,
+    colorSuccess: genesisColors.success,
+    colorWarning: genesisColors.warning,
+    colorError: genesisColors.error,
+    colorInfo: genesisColors.primary,
+    colorLink: genesisColors.primary,
+    colorBgLayout: genesisColors.background,
+    colorBgContainer: genesisColors.surface,
+    colorBorder: genesisColors.border,
+    colorBorderSecondary: genesisColors.border,
+    borderRadius: 6,
+    borderRadiusLG: 12,
+    fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamilyCode: "'JetBrains Mono', monospace",
+    fontSize: 14,
+    colorText: genesisColors.textPrimary,
+    colorTextSecondary: genesisColors.textSecondary,
   },
   components: {
     Button: {
-      borderRadius: 10,
-      controlHeight: 40,
+      borderRadius: 6,
+      controlHeight: 38,
+      primaryShadow: 'none',
+      defaultShadow: 'none',
+      dangerShadow: 'none',
     },
     Card: {
       borderRadiusLG: 12,
+      boxShadowTertiary: 'none',
     },
     Input: {
-      borderRadius: 10,
-      controlHeight: 44,
+      borderRadius: 6,
+      controlHeight: 38,
+    },
+    Select: {
+      borderRadius: 6,
+      controlHeight: 38,
     },
     Menu: {
-      darkItemBg: 'transparent',
-      darkItemSelectedBg: 'rgba(255,255,255,0.15)',
-      darkItemHoverBg: 'rgba(255,255,255,0.1)',
-      darkItemColor: 'rgba(255,255,255,0.85)',
-      darkItemSelectedColor: '#ffffff',
+      itemBg: 'transparent',
+      itemSelectedBg: genesisColors.background,
+      itemSelectedColor: genesisColors.textPrimary,
+      itemHoverBg: genesisColors.background,
       itemBorderRadius: 8,
       iconSize: 18,
       itemMarginInline: 8,
+      subMenuItemBg: 'transparent',
     },
     Table: {
       borderRadiusLG: 12,
+      headerBg: genesisColors.surface,
+      headerColor: genesisColors.textSecondary,
+    },
+    Tag: {
+      borderRadiusSM: 9999,
+    },
+    Tabs: {
+      inkBarColor: genesisColors.primary,
+      itemActiveColor: genesisColors.primary,
+      itemSelectedColor: genesisColors.primary,
+    },
+    Layout: {
+      siderBg: genesisColors.surface,
+      headerBg: genesisColors.surface,
+      bodyBg: genesisColors.background,
     },
   },
 }

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Table, Tag, Select, Space, Drawer, Tabs, Timeline, Image, Typography, Card } from 'antd'
-import { getEvents, getEventAggregates, getEventRuleHits } from '../../services/api'
+import { Table, Tag, Select, Space, Drawer, Tabs, Timeline, Image, Typography, Card, Button, message, Popconfirm } from 'antd'
+import { getEvents, getEventAggregates, getEventRuleHits, confirmEvent, dismissEvent } from '../../services/api'
 import VideoPlayer from '../../components/VideoPlayer'
+
+const feedbackColors: Record<string, string> = { confirmed: 'green', dismissed: 'orange' }
+const feedbackLabels: Record<string, string> = { confirmed: '已确认', dismissed: '误报' }
 
 const riskColors = ['green', 'blue', 'orange', 'red']
 const riskLabels = ['正常', '低风险', '中风险', '高风险']
@@ -52,6 +55,20 @@ export default function EventList() {
     } catch { /* ignore */ }
   }
 
+  const handleConfirm = async (id: number, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const res: any = await confirmEvent(id)
+    if (res.code === 200) { message.success('已确认'); fetchData() }
+    else message.error(res.message)
+  }
+
+  const handleDismiss = async (id: number, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const res: any = await dismissEvent(id)
+    if (res.code === 200) { message.success('已标记为误报'); fetchData() }
+    else message.error(res.message)
+  }
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '库房ID', dataIndex: 'room_id', width: 80 },
@@ -59,9 +76,23 @@ export default function EventList() {
     { title: '事件时间', dataIndex: 'event_time', width: 180 },
     { title: '事件类型', dataIndex: 'event_type', render: (v: string) => <Tag>{v || '未分类'}</Tag> },
     { title: '风险等级', dataIndex: 'risk_level', width: 90, render: (v: number) => <Tag color={riskColors[v]}>{riskLabels[v] ?? '未知'}</Tag> },
+    { title: '反馈状态', dataIndex: 'feedback_status', width: 100, render: (v: string) => v ? <Tag color={feedbackColors[v]}>{feedbackLabels[v]}</Tag> : <Tag>待处理</Tag> },
     { title: '人数', dataIndex: 'person_count', width: 60 },
     { title: '描述', dataIndex: 'description', ellipsis: true },
-    { title: 'AI结论', dataIndex: 'ai_conclusion', ellipsis: true },
+    { title: '操作', width: 160, render: (_: any, record: any) => (
+      <Space size="small" onClick={e => e.stopPropagation()}>
+        {record.feedback_status !== 'confirmed' && (
+          <Popconfirm title="确认此事件？" onConfirm={() => handleConfirm(record.id)}>
+            <Button size="small" type="primary">确认</Button>
+          </Popconfirm>
+        )}
+        {record.feedback_status !== 'dismissed' && (
+          <Popconfirm title="标记为误报？" onConfirm={() => handleDismiss(record.id)}>
+            <Button size="small" danger>误报</Button>
+          </Popconfirm>
+        )}
+      </Space>
+    )},
   ]
 
   const aggColumns = [
